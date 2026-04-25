@@ -1,0 +1,99 @@
+services:
+  # Servidor MCP AgentK
+  agentk-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agentk-mcp-server
+    ports:
+      - "127.0.0.1:3333:3333"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
+      - FASTMCP_LOG_LEVEL=${FASTMCP_LOG_LEVEL:-INFO}
+      - KUBECONFIG=/app/config
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ~/.kube/config-embedded:/app/config:ro
+    networks:
+      - agentk-network
+      - minikube
+    restart: unless-stopped
+
+  # Cliente Streamlit AgentK
+  agentk-client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: agentk-streamlit-client
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
+      - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    networks:
+      - agentk-network
+    depends_on:
+      agentk-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Keycloak
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.4
+    container_name: keycloak
+    command: start-dev
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KC_DB=dev-file
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - agentk-network
+    restart: unless-stopped
+
+  # OAuth2 Proxy
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: oauth2-proxy
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://agentk-client:8501
+      - --provider=keycloak-oidc
+      - --client-id=oauth2-proxy
+      - --client-secret=SEU_CLIENT_SECRET
+      - --redeem-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/token
+      - --oidc-issuer-url=http://keycloak:8080/realms/agentk
+      - --cookie-secret=agentktccsecretkey1234567890abcd
+      - --cookie-secure=false
+      - --email-domain=*
+      - --skip-provider-button=true
+      - --oidc-extra-audience=oauth2-proxy
+      - --whitelist-domain=keycloak
+      - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
+    ports:
+      - "127.0.0.1:4180:4180"
+    networks:
+      - agentk-network
+    depends_on:
+      - keycloak
+      - agentk-client
+    restart: unless-stopped
+
+networks:
+  agentk-network:
+    driver: bridge
+    name: agentk-network
+  minikube:
+    external: true
+
+volumes:
+  agentk-logs:
+    driver: local
+  keycloak-data:
+    driver: local

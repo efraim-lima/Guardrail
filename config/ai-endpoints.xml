@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ai-endpoints>
+    <endpoint>
+        <domain>api.openai.com</domain>
+        <name>OpenAI</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.anthropic.com</domain>
+        <name>Anthropic</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.cohere.ai</domain>
+        <name>Cohere</name>
+    </endpoint>
+    <endpoint>
+        <domain>generativelanguage.googleapis.com</domain>
+        <name>Google AI</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.mistral.ai</domain>
+        <name>Mistral</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.together.xyz</domain>
+        <name>Together AI</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.groq.com</domain>
+        <name>Groq</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.perplexity.ai</domain>
+        <name>Perplexity</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.deepseek.com</domain>
+        <name>DeepSeek</name>
+    </endpoint>
+    <endpoint>
+        <domain>api.fireworks.ai</domain>
+        <name>Fireworks</name>
+    </endpoint>
+</ai-endpoints>

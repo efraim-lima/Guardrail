@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<monitored-sites>
+    <site>google.com</site>
+    <site>facebook.com</site>
+    <site>youtube.com</site>
+    <site>twitter.com</site>
+    <site>amazon.com</site>
+    <site>wikipedia.org</site>
+    <site>reddit.com</site>
+    <site>github.com</site>
+    <site>stackoverflow.com</site>
+    <site>linkedin.com</site>
+</monitored-sites>

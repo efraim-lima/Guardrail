@@ -1,0 +1,92 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.gateway'
+version = '1.0.0'
+
+// Compatível com Gradle antigo: evita JavaVersion.VERSION_21, indisponível em versões antigas.
+sourceCompatibility = 21
+targetCompatibility = 21
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    proguard
+}
+
+dependencies {
+    implementation 'org.pcap4j:pcap4j-core:1.8.2'
+    implementation 'org.pcap4j:pcap4j-packetfactory-static:1.8.2'
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.78.1'
+    proguard 'com.guardsquare:proguard-base:7.6.1'
+}
+
+mainClassName = 'Main'
+
+// Configurações de Compilação
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:deprecation', '-Xlint:unchecked']
+}
+
+// Configuracao do jar padrao (sem dependencias — apenas para referencia local)
+jar {
+    manifest {
+        attributes(
+            'Main-Class': 'Main',
+            'Implementation-Version': version
+        )
+    }
+}
+
+// Fat JAR: empacota a aplicacao + todas as dependencias em um unico JAR executavel.
+// Substitui o shadow plugin (nao requer nenhum plugin externo).
+task fatJar(type: Jar) {
+    group = 'build'
+    description = 'Gera fat JAR executavel com todas as dependencias'
+    classifier = 'all'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes(
+            'Main-Class': 'Main',
+            'Implementation-Version': version
+        )
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with jar
+}
+
+// JAR ofuscado via ProGuard: usa o fat JAR como entrada e gera o binario final para Docker.
+// Uso local: ./gradlew obfuscatedJar  →  build/libs/gateway-sensor-1.0.0-obf.jar
+def obfuscatedJarPath = "$buildDir/libs/${project.name}-${version}-obf.jar"
+
+task obfuscatedJar(type: JavaExec, dependsOn: fatJar) {
+    group = 'build'
+    description = 'Gera jar executavel ofuscado para distribuicao em Docker/GitHub'
+
+    classpath = configurations.proguard
+    main = 'proguard.ProGuard'
+
+    def javaHome = System.getProperty('java.home')
+
+    doFirst {
+        args '@proguard-rules.pro',
+                '-injars', fatJar.archivePath,
+                '-outjars', obfuscatedJarPath,
+                '-libraryjars', "${javaHome}/jmods"
+    }
+}
+
+tasks.build {
+    dependsOn obfuscatedJar
+}
