@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Desacoplamento Operacional do Compose Principal em Relação ao Compose do AgentK
+
+### Isolamento de Ferramentas para Execução Independente
+- **Comentário seletivo no `docker-compose.yaml`**: Foi executado o comentário integral dos blocos de serviço `agentk-server` e `agentk-client`, bem como das declarações correlatas `minikube` (rede externa) e `agentk-logs` (volume local), preservando-se inalteradas as demais definições de infraestrutura não pertencentes ao manifesto específico do AgentK. A intervenção teve como fundamento a separação de responsabilidades entre orquestrações, permitindo que os componentes nativos do `Agentk-Sugest/docker-compose.yml` passem a ser inicializados por meio de fluxo autônomo e dedicado, sem acoplamento direto ao compose consolidado da raiz do projeto.
+
 ## 25 de Abril de 2026 - Evolução do Guardrail: Controle de Acesso Baseado em Risco
 
 ### Autenticação em Escopo de Risco (Keycloak)
