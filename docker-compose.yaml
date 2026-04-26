@@ -14,7 +14,7 @@ services:
     container_name: agentk-gateway
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8081:8080" # Alterado para 8081 no host para evitar conflito com Keycloak
     networks:
       - agentk-network
     environment:
@@ -45,8 +45,8 @@ services:
   # ---------------------------------------------------------------------------
   agentk-server:
     build:
-      context: ./Agentk-Sugest/server
-      dockerfile: Dockerfile
+      context: ./Agentk-Sugest
+      dockerfile: server/Dockerfile
     container_name: agentk-mcp-server
     ports:
       - "3333:3333"
@@ -79,8 +79,8 @@ services:
   # ---------------------------------------------------------------------------
   agentk-client:
     build:
-      context: ./Agentk-Sugest/client
-      dockerfile: Dockerfile
+      context: ./Agentk-Sugest
+      dockerfile: client/Dockerfile
     container_name: agentk-streamlit-client
 
     extra_hosts:
