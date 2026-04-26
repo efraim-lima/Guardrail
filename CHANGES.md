@@ -1,5 +1,19 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção Sistêmica de Conectividade entre Nginx, AgentK Client e MCP Server
+
+### Reativação de Serviços e Correção de Roteamento de Borda
+- **Atualização de `docker-compose.yaml`**: Reativados os serviços `agentk-server` e `agentk-client` no manifesto principal, com exposição explícita de portas (`3333` e `8501`), dependências de inicialização e `healthcheck` para o servidor MCP. O serviço `nginx` foi reconfigurado para depender diretamente de `agentk-client` e os binds de portas sensíveis ao acesso externo em VM foram parametrizados por `HOST_BIND_IP` (padrão `0.0.0.0`) para viabilizar acesso via IP da máquina virtual.
+- **Atualização de `docker-compose.init.yaml`**: Aplicado o mesmo alinhamento estrutural do compose principal na variante com serviço `init`, garantindo equivalência funcional entre os dois fluxos de inicialização.
+- **Refatoração de `nginx/nginx.conf`**: O upstream HTTPS foi alterado de `oauth2-proxy:4180` para `agentk-client:8501`, eliminando acoplamento ao caminho de autenticação intermediário durante o fluxo base de acesso ao app via `agentk.local`.
+
+### Correção de Endereçamento Interno do Cliente
+- **Atualização de `Agentk-Sugest/client/app/services/chat_service.py`**: O endpoint de validação do Guardrail deixou de ser hardcoded em `host.docker.internal:8080` e passou a ser parametrizável por `GATEWAY_VALIDATE_URL`, com fallback para `https://agentk-gateway:8080/validar`. A alteração assegura comunicação nativa entre containers na rede Docker e evita falhas quando o host expõe porta distinta.
+
+### Ajustes Operacionais de Script para Ambiente VM
+- **Atualização de `setup.sh`**: A entrada de hosts passou a usar `AGENTK_HOST_IP` (padrão `127.0.0.1`) na composição de `agentk.local`, tornando o mapeamento adaptável para acesso via IP da VM. Foi corrigido também o fluxo para sempre aplicar/verificar a entrada no `/etc/hosts`, mesmo quando o certificado já existe.
+- **Atualização de `start.sh`**: Revisadas as instruções de acesso pós-subida para refletir endpoints reais do ambiente virtualizado (`agentk.local`, `<IP_DA_VM>:8501`, `<IP_DA_VM>:3333`, `<IP_DA_VM>:8082` e porta parametrizada do Ollama).
+
 ## 26 de Abril de 2026 - Mitigação de Colisão de Porta do Ollama no Host
 
 ### Parametrização da Porta Externa no Docker Compose

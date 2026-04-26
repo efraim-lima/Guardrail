@@ -30,7 +30,8 @@ CERT_FILE="${CERTS_DIR}/agentk.crt"
 KEY_FILE="${CERTS_DIR}/agentk.key"
 CERT_DAYS=365
 CERT_CN="agentk.local"
-HOSTS_ENTRY="127.0.0.1 agentk.local"
+AGENTK_HOST_IP="${AGENTK_HOST_IP:-127.0.0.1}"
+HOSTS_ENTRY="${AGENTK_HOST_IP} agentk.local"
 HOSTS_FILE="/etc/hosts"
 
 setup_hosts_entry() {
@@ -74,6 +75,7 @@ main() {
         log_success "Certificado já existe:"
         log_success "  Certificado: $CERT_FILE"
         log_success "  Chave privada: $KEY_FILE"
+        setup_hosts_entry
         echo ""
         return 0
     fi

@@ -44,73 +44,61 @@ services:
   # ---------------------------------------------------------------------------
   # Servidor MCP AgentK
   # ---------------------------------------------------------------------------
-  # agentk-server:
-  #   build:
-  #     context: ./Agentk-Sugest
-  #     dockerfile: server/Dockerfile
-  #   container_name: agentk-mcp-server
-  #   ports:
-  #     - "3333:3333"
-  #   environment:
-  #     - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
-  #     - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
-  #     - FASTMCP_PORT=${FASTMCP_PORT:-3333}
-  #     - FASTMCP_LOG_LEVEL=${FASTMCP_LOG_LEVEL:-INFO}
-  #     - KUBECONFIG=/app/config
-  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
-
-  #   volumes:
-  #     - ~/.kube/config-embedded:/app/config:ro
-
-  #   networks:
-  #     - agentk-network
-  #     - minikube
-
-  #   healthcheck:
-  #     test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
-  #     interval: 20s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 20s
-
-  #   restart: unless-stopped
+  agentk-server:
+    build:
+      context: ./Agentk-Sugest
+      dockerfile: server/Dockerfile
+    container_name: agentk-mcp-server
+    ports:
+      - "${HOST_BIND_IP:-0.0.0.0}:3333:3333"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
+      - FASTMCP_PORT=${FASTMCP_PORT:-3333}
+      - FASTMCP_LOG_LEVEL=${FASTMCP_LOG_LEVEL:-INFO}
+      - KUBECONFIG=/app/config
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ~/.kube/config-embedded:/app/config:ro
+    networks:
+      - agentk-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Cliente Streamlit AgentK
   # ---------------------------------------------------------------------------
-  # agentk-client:
-  #   build:
-  #     context: ./Agentk-Sugest
-  #     dockerfile: client/Dockerfile
-  #   container_name: agentk-streamlit-client
-
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
-
-  #   ports:
-  #     - "8501:8501"
-
-  #   environment:
-  #     - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
-  #     - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
-  #     - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
-  #     - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
-  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
-
-  #     # Direciona chamadas HTTP/TLS do cliente para o gateway
-  #     - HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
-  #     - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
-
-  #   networks:
-  #     - agentk-network
-
-  #   depends_on:
-  #     agentk-server:
-  #       condition: service_healthy
-  #     gateway:
-  #       condition: service_started
-
-  #   restart: unless-stopped
+  agentk-client:
+    build:
+      context: ./Agentk-Sugest
+      dockerfile: client/Dockerfile
+    container_name: agentk-streamlit-client
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HOST_BIND_IP:-0.0.0.0}:8501:8501"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
+      - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
+      - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
+    networks:
+      - agentk-network
+    depends_on:
+      agentk-server:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Keycloak
@@ -124,7 +112,7 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
     ports:
-      - "127.0.0.1:8082:8080"
+      - "${HOST_BIND_IP:-0.0.0.0}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
     networks:
@@ -153,11 +141,12 @@ services:
       - --whitelist-domain=keycloak
       - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
     ports:
-      - "127.0.0.1:4180:4180"
+      - "${HOST_BIND_IP:-0.0.0.0}:4180:4180"
     networks:
       - agentk-network
     depends_on:
       - keycloak
+      - agentk-client
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -176,7 +165,7 @@ services:
       - agentk-network
 
   # ---------------------------------------------------------------------------
-  # Nginx - Reverse Proxy com HTTPS
+  # Nginx - Reverse Proxy HTTPS para AgentK Client
   # ---------------------------------------------------------------------------
   nginx:
     image: nginx:alpine
@@ -185,12 +174,12 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
     ports:
-      - "127.0.0.1:80:80"
-      - "127.0.0.1:443:443"
+      - "${HOST_BIND_IP:-0.0.0.0}:80:80"
+      - "${HOST_BIND_IP:-0.0.0.0}:443:443"
     networks:
       - agentk-network
     depends_on:
-      - oauth2-proxy
+      - agentk-client
     restart: unless-stopped
 
 # =============================================================================
