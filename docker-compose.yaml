@@ -9,14 +9,17 @@ services:
   # ---------------------------------------------------------------------------
   # Gateway Java (Executa o JAR pré-compilado ofuscado)
   # ---------------------------------------------------------------------------
-  gateway:
+  agentk-gateway:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: agentk-gateway
     restart: unless-stopped
-    ports:
-      - "8081:8080" # Alterado para 8081 no host para evitar conflito com Keycloak
+    # Porta comentada na raiz para forçar acesso via Nginx (443)
+    # ports:
+    #   - "8081:8080"
+    depends_on:
+      - ollama
     networks:
       - agentk-network
     environment:
@@ -27,8 +30,6 @@ services:
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
     entrypoint: [ "java", "-jar", "/app/app.jar" ]
-    depends_on:
-      - ollama
     volumes:
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
@@ -49,8 +50,9 @@ services:
       context: ./Agentk-Sugest
       dockerfile: server/Dockerfile
     container_name: agentk-mcp-server
-    ports:
-      - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_MCP_HOST_PORT:-3334}:3333"
+    # Porta comentada na raiz para forçar acesso via Nginx (443)
+    # ports:
+    #   - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_MCP_HOST_PORT:-3334}:3333"
     environment:
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
       - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
@@ -63,7 +65,7 @@ services:
     networks:
       - agentk-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
+      test: [ "CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()" ]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -80,8 +82,9 @@ services:
     container_name: agentk-streamlit-client
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_CLIENT_HOST_PORT:-8502}:8501"
+    # Porta comentada na raiz para forçar acesso via Nginx (443)
+    # ports:
+    #   - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_CLIENT_HOST_PORT:-8502}:8501"
     environment:
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
       - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
@@ -89,14 +92,15 @@ services:
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333/sse}
       - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
+      # Proxy removido pois o módulo MITM não está ativo
+      #- HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
+      #- OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
     networks:
       - agentk-network
     depends_on:
       agentk-server:
         condition: service_healthy
-      gateway:
+      agentk-gateway:
         condition: service_started
     restart: unless-stopped
 
@@ -193,9 +197,9 @@ networks:
   #   external: true
   #   name: minikube
 
-# =============================================================================
-# Volumes
-# =============================================================================
+  # =============================================================================
+  # Volumes
+  # =============================================================================
 volumes:
   # agentk-logs:
   #   driver: local
