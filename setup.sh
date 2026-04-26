@@ -25,7 +25,7 @@ log_success() {
 }
 
 # Configurações
-CERTS_DIR="./certs"
+CERTS_DIR="./nginx/certs"
 CERT_FILE="${CERTS_DIR}/agentk.crt"
 KEY_FILE="${CERTS_DIR}/agentk.key"
 CERT_DAYS=365
