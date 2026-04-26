@@ -1,16 +1,7 @@
-# =============================================================================
-# Build Stage - Gradle
-# =============================================================================
-FROM gradle:8.7-jdk21 AS builder
-WORKDIR /app
-COPY build.gradle settings.gradle proguard-rules.pro ./
-COPY src/ ./src/
-RUN gradle obfuscatedJar --no-daemon
-
-# =============================================================================
-# Runtime — imagem mínima com JRE.
-# =============================================================================
 FROM eclipse-temurin:21-jre-jammy
+
+# Caminho do artefato JAR já pronto dentro do contexto de build Docker.
+ARG GATEWAY_JAR=build/libs/gateway-sensor-1.0.0-obf.jar
 
 # Metadados
 LABEL org.opencontainers.image.title="AgentK Security Gateway"
@@ -36,8 +27,8 @@ RUN groupadd -r gateway && useradd -r -g gateway -s /sbin/nologin gateway
 
 WORKDIR /app
 
-# Copiar JAR ofuscado gerado no estágio de build
-COPY --from=builder /app/build/libs/gateway-sensor-1.0.0-obf.jar app.jar
+# Copiar JAR pré-compilado (sem executar Gradle durante o build da imagem)
+COPY ${GATEWAY_JAR} app.jar
 
 # Copiar configurações estáticas
 COPY config/ config/

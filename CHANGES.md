@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Eliminação de Dependência de Gradle no Build da Imagem Gateway
+
+### Reestruturação do `Dockerfile` para Fluxo Exclusivamente Baseado em Docker
+- **Refatoração do `Dockerfile` do Gateway**: Foi removido o estágio `builder` baseado em `gradle:8.7-jdk21` e, consequentemente, suprimida a execução de `gradle obfuscatedJar --no-daemon` no processo de build da imagem. Em substituição, a imagem passou a consumir diretamente o artefato pré-compilado via `ARG GATEWAY_JAR` (padrão `build/libs/gateway-sensor-1.0.0-obf.jar`) e `COPY ${GATEWAY_JAR} app.jar`. A alteração neutraliza a falha de compatibilidade de script Gradle (`classifier` inválido) durante o build em contêiner e consolida um pipeline de execução centrado apenas em Docker para etapa de orquestração.
+
 ## 26 de Abril de 2026 - Adequação de Portabilidade do Serviço Gateway no Docker Compose
 
 ### Substituição de Bind-Mount de Artefato por Build Nativo de Imagem
