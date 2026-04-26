@@ -1,5 +1,18 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Automação de Setup em Fluxo Docker
+
+### Criação de Scripts de Inicialização Automatizada
+- **Novo arquivo `start.sh`**: Script wrapper que executa automaticamente `setup.sh` antes de iniciar os containers Docker via `docker compose up -d --build`. Ideal para fluxo local de desenvolvimento onde o usuário deseja uma única linha de comando para provisionar toda a infraestrutura.
+- **Novo arquivo `docker-entrypoint-init.sh`**: Script de entrypoint que executa setup.sh dentro de um contexto pré-Docker, viabilizando o uso de um serviço `init` no Docker Compose que executa antes dos demais containers.
+- **Novo arquivo `docker-compose.init.yaml`**: Versão alternativa do Docker Compose que inclui um serviço de inicialização (`init`) que executa o setup.sh automaticamente. Todos os demais serviços (`gateway`, `keycloak`, `ollama`, `nginx`, `oauth2-proxy`) declaram dependência (`depends_on`) neste serviço, garantindo a execução sequencial. Uso: `docker compose -f docker-compose.init.yaml up -d --build`.
+
+## 26 de Abril de 2026 - Simplificação do Script de Setup para Geração de Certificado Nginx
+
+### Redução de Escopo do `setup.sh` para Foco Exclusivo em Certificado SSL
+- **Refatoração do `setup.sh`**: O script foi completamente reestruturado para remover toda infraestrutura complexa de iptables, CA de autoridade certificadora, keystore PKCS12 e adição de certificados ao trust store do sistema. A nova versão executa apenas a tarefa elementar de gerar um certificado SSL auto-assinado (RSA 2048, validade 365 dias) para o serviço Nginx local, criando o diretório `./certs` se necessário e exportando os artefatos (`agentk.crt` e `agentk.key`) para consumo pela orquestração Docker Compose. A alteração alinha o propósito do script com o ambiente de desenvolvimento mais enxuto.
+- **Adição de entrada DNS local (`setup_hosts_entry`)**: Incluída a função `setup_hosts_entry` que insere idempotentemente a entrada `127.0.0.1 agentk.local` em `/etc/hosts` do sistema anfitrião. A função verifica prévia existência da entrada antes de qualquer escrita (prevenindo duplicatas), e adapta a estratégia de elevação de privilégio conforme o contexto de execução: injeção direta quando executada como root ou via `sudo tee -a` quando executada como usuário comum. Esta operação foi deliberadamente mantida no script do host porque o Docker Compose não possui permissão de modificar definições de resolução DNS do sistema anfitrião.
+
 ## 26 de Abril de 2026 - Eliminação de Dependência de Gradle no Build da Imagem Gateway
 
 ### Reestruturação do `Dockerfile` para Fluxo Exclusivamente Baseado em Docker
