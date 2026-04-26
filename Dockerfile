@@ -20,7 +20,9 @@ RUN apt-get update -qq && \
         ca-certificates \
         libpcap0.8 \
         curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --set iptables /usr/sbin/iptables-legacy \
+    && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
 # Usuário de serviço (sem shell interativo = headless)
 RUN groupadd -r gateway && useradd -r -g gateway -s /sbin/nologin gateway

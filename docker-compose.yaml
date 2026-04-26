@@ -18,6 +18,8 @@ services:
     # Porta comentada na raiz para forçar acesso via Nginx (443)
     # ports:
     #   - "8081:8080"
+    cap_add:
+      - NET_ADMIN
     depends_on:
       - ollama
     networks:

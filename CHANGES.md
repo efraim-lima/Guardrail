@@ -1,5 +1,30 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Falha Crítica de Inicialização do `agentk-gateway` (iptables / NET_ADMIN)
+
+### Arquivos Modificados
+
+- **`docker-compose.yaml`** — Adicionada a diretiva `cap_add: [NET_ADMIN]` ao serviço `agentk-gateway`.
+- **`Dockerfile`** — Adicionada instrução `update-alternatives` para substituir o backend padrão `iptables-nft` pelo `iptables-legacy` após a instalação do pacote `iptables`.
+
+### Descrição
+
+O container `agentk-gateway` falhava sistematicamente na inicialização com o erro `iptables v1.8.7 (nf_tables): unknown option "--dport"`, impedindo que o processo Java do gateway fosse iniciado. Como o script `docker-entrypoint.sh` opera com `set -euo pipefail`, qualquer falha no bloco `setup_iptables()` encerrava o processo imediatamente — fazendo com que o healthcheck marcasse o container como `unhealthy` e o compose descartasse o serviço.
+
+### Causa-Raiz
+
+A falha apresentava duas origens combinadas:
+
+1. **Ausência da capability `NET_ADMIN`**: Sem ela, o kernel bloqueia operações na tabela `nat` do iptables, impedindo a criação de regras PREROUTING/OUTPUT mesmo para processos rodando como root no container.
+2. **Backend `nf_tables` incompatível em containers**: O Ubuntu Jammy utiliza por padrão o `iptables-nft` (backend nf_tables). Em ambientes containerizados sem os módulos nft do kernel disponíveis, este backend apresenta comportamento errático — incluindo a rejeição de opções padrão como `--dport` — ao contrário do `iptables-legacy` que acessa diretamente as syscalls `ip_tables`.
+
+### Solução Aplicada
+
+- **`cap_add: NET_ADMIN`** concede ao container a capability Linux necessária para modificar regras de firewall e NAT do kernel.
+- **`update-alternatives --set iptables /usr/sbin/iptables-legacy`** garante que todas as invocações de `iptables` dentro do container utilizem o backend legado, compatível com a camada de kernel exposta pelo Docker, eliminando os erros de "unknown option".
+
+---
+
 ## 26 de Abril de 2026 - Correção de Conectividade e Resolução de Nomes do Gateway
 
 - **Unificação da Orquestração**: Os serviços `agentk-server` e `agentk-client` foram reincorporados ao `docker-compose.yaml` da raiz do projeto. Esta mudança elimina problemas de resolução de nome (DNS) entre containers de diferentes projetos e simplifica o fluxo de inicialização.
