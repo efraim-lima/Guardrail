@@ -130,6 +130,7 @@ services:
 networks:
   agentk-network:
     driver: bridge
+    external: true
     name: agentk-network
   # minikube:
   #   external: true
