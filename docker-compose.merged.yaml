@@ -19,37 +19,19 @@ services:
     stdin_open: false
     tty: false
 
-    # Necessario para regras iptables
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-
-    # Usa rede do host para redirecionamento transparente de trafego
-    network_mode: "host"
-
+    ports:
+      - "8080:8080"
+    networks:
+      - agentk-network
     environment:
-      GATEWAY_MITM_PORT: "${GATEWAY_MITM_PORT:-8443}"
-      WEBHOOK_PORT: "${WEBHOOK_PORT:-8080}"
-      WEBHOOK_PATH: "${WEBHOOK_PATH:-/validar}"
-
-      CA_CERT_PATH: "/app/certs/gateway-ca.crt"
-      CA_KEY_PATH: "/app/keys/gateway-ca.key"
-
-      KEYSTORE_FILE: "/app/keys/gateway-keystore.p12"
-      KEYSTORE_PASSWORD: "${KEYSTORE_PASSWORD:-gateway-secret}"
-      KEYSTORE_ALIAS: "agentk-gateway"
-
-      # AGENTK_DOCKER_CONTAINER: "${AGENTK_DOCKER_CONTAINER:-agentk-mcp-server}"
-      AGENTK_DOCKER_CONTAINER: "${AGENTK_DOCKER_CONTAINER:-127.0.0.1}"
-      SKIP_DOCKER_CA_SETUP: "${SKIP_DOCKER_CA_SETUP:-0}"
-
-      TARGET_PORT: "443"
-      GATEWAY_PORT: "${GATEWAY_MITM_PORT:-8443}"
-      GATEWAY_USER: "root"
-
+      - WEBHOOK_PORT=8080
+      - WEBHOOK_PATH=/validar
+      - OLLAMA_ENDPOINT=http://ollama:11434/api/generate
+      - OLLAMA_MODEL=qwen2.5:1.5b
+    entrypoint: [ "java", "-jar", "/app/app.jar" ]
+    depends_on:
+      - ollama
     volumes:
-      - gateway-certs:/app/certs
-      - gateway-keys:/app/keys
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
@@ -78,13 +60,8 @@ services:
       - KUBECONFIG=/app/config
       - OPENAI_API_KEY=${OPENAI_API_KEY}
 
-      # Faz o servidor confiar na CA do gateway
-      - REQUESTS_CA_BUNDLE=/app/certs/gateway-ca.crt
-      - SSL_CERT_FILE=/app/certs/gateway-ca.crt
-
     volumes:
       - ~/.kube/config-embedded:/app/config:ro
-      - gateway-certs:/app/certs:ro
 
     networks:
       - agentk-network
@@ -121,16 +98,9 @@ services:
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
 
-      # Direciona chamadas HTTP/TLS do cliente para o gateway no host
-      - HTTPS_PROXY=${HTTPS_PROXY:-http://host.docker.internal:8080}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://host.docker.internal:8080/v1}
-
-      # Confia na CA gerada pelo gateway
-      - REQUESTS_CA_BUNDLE=/app/certs/gateway-ca.crt
-      - SSL_CERT_FILE=/app/certs/gateway-ca.crt
-
-    volumes:
-      - gateway-certs:/app/certs:ro
+      # Direciona chamadas HTTP/TLS do cliente para o gateway
+      - HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
 
     networks:
       - agentk-network
@@ -207,6 +177,24 @@ services:
     networks:
       - agentk-network
 
+  # ---------------------------------------------------------------------------
+  # Nginx - Reverse Proxy com HTTPS
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    networks:
+      - agentk-network
+    depends_on:
+      - oauth2-proxy
+    restart: unless-stopped
+
 # =============================================================================
 # Redes
 # =============================================================================
@@ -222,10 +210,6 @@ networks:
 # Volumes
 # =============================================================================
 volumes:
-  gateway-certs:
-    name: agentk-gateway-certs
-  gateway-keys:
-    name: agentk-gateway-keys
   agentk-logs:
     driver: local
   keycloak-data:

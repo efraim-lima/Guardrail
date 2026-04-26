@@ -1,127 +1,164 @@
 # =============================================================================
-# AgentK Security Gateway — Docker Compose
+# Compose Final: Gateway + AgentK server/client
 #
-# Topologia:
-#   ┌─────────────────────┐    gateway-net (isolada)   ┌─────────────────┐
-#   │  gateway (este svc) │ ◄────────────────────────► │  agentk-mcp-    │
-#   │  porta 8443 / 8080  │                            │  server         │
-#   └─────────────────────┘                            └─────────────────┘
-#
-# Persistência no boot:
-#   restart: unless-stopped  →  sobe quando o daemon Docker subir.
-#   Para garantir que o daemon sobe no boot do SO:
-#     sudo systemctl enable docker
-#
+# Este arquivo ASSUME que o binário do gateway já foi compilado através
+# do gradle (build/libs/gateway-sensor-1.0.0-obf.jar). Não realiza build local.
 # =============================================================================
 
 services:
-
   # ---------------------------------------------------------------------------
-  # gateway — proxy TLS headless de interceptação/análise de tráfego
-  #
-  # O build da imagem utiliza um Dockerfile multi-stage, garantindo que
-  # o JAR ofuscado seja construído automaticamente pelo Docker.
+  # Gateway Java (Executa o JAR pré-compilado ofuscado)
   # ---------------------------------------------------------------------------
   gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: agentk-security-gateway:1.0.0
+    image: eclipse-temurin:21-jre-jammy
     container_name: agentk-gateway
-
-    # Headless: sem terminal, sem stdin
-    stdin_open: false
-    tty: false
-
-    # Sempre reinicia (inclusive após reboot do servidor)
     restart: unless-stopped
-
-    # Capacidades necessárias para iptables dentro do container
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    # O gateway precisa manipular a tabela NAT do kernel do host
-    network_mode: "host"        # usa a stack de rede do host → iptables funciona
-
+    ports:
+      - "8080:8080"
+    networks:
+      - agentk-network
     environment:
-      # Portas
-      GATEWAY_MITM_PORT: "${GATEWAY_MITM_PORT:-8443}"
-      WEBHOOK_PORT: "${WEBHOOK_PORT:-8080}"
-      WEBHOOK_PATH: "${WEBHOOK_PATH:-/validar}"
-
-      # Certificados CA
-      CA_CERT_PATH: "/app/certs/gateway-ca.crt"
-      CA_KEY_PATH:  "/app/keys/gateway-ca.key"
-
-      # Keystore PKCS12
-      KEYSTORE_FILE:     "/app/keys/gateway-keystore.p12"
-      KEYSTORE_PASSWORD: "${KEYSTORE_PASSWORD:-gateway-secret}"
-      KEYSTORE_ALIAS:    "agentk-gateway"
-
-      # AgentK — hostname acessível via rede do host ou nome do container
-      AGENTK_DOCKER_CONTAINER: "${AGENTK_DOCKER_CONTAINER:-agentk-mcp-server}"
-      SKIP_DOCKER_CA_SETUP:    "${SKIP_DOCKER_CA_SETUP:-0}"
-
-      # Redirecionamento iptables
-      TARGET_PORT:  "443"
-      GATEWAY_PORT: "${GATEWAY_MITM_PORT:-8443}"
-      GATEWAY_USER: "root"
-
-      # Logs sem buffer (saída imediata nos logs do Docker)
-      JAVA_TOOL_OPTIONS: "-Djava.util.logging.SimpleFormatter.format=%1$tF %1$tT %4$s %5$s%n"
-
+      - WEBHOOK_PORT=8080
+      - WEBHOOK_PATH=/validar
+      - OLLAMA_ENDPOINT=http://ollama:11434/api/generate
+      - OLLAMA_MODEL=qwen2.5:1.5b
+      - KEYSTORE_PATH=/app/gateway-keystore.p12
+      - KEYSTORE_PASSWORD=gateway-secret
+    entrypoint: [ "java", "-jar", "/app/app.jar" ]
+    depends_on:
+      - ollama
     volumes:
-      # Volume persistente: certificados e keystore sobrevivem a recriações do container
-      - gateway-certs:/app/certs
-      - gateway-keys:/app/keys
-      # Configurações somente-leitura do projeto
+      - ./build/libs/gateway-sensor-1.0.0-obf.jar:/app/app.jar:ro
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
-
-    # Healthcheck: confirma que o webhook está respondendo
-    healthcheck:
-      test: ["CMD", "sh", "-c", "curl -sf http://localhost:${WEBHOOK_PORT:-8080}/validar || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
+      - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
 
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "50m"
         max-file: "5"
 
   # ---------------------------------------------------------------------------
-  # agentk-mcp-server — serviço AgentK (referência; substitua pela imagem real)
-  # Remova ou ajuste este bloco se o AgentK já está rodando separadamente.
+  # Servidor MCP AgentK
   # ---------------------------------------------------------------------------
-  agentk-mcp-server:
-    image: "${AGENTK_IMAGE:-ghcr.io/agentk/mcp-server:latest}"
+  agentk-server:
+    build:
+      context: ./Agentk-Sugest/server
+      dockerfile: Dockerfile
     container_name: agentk-mcp-server
-    restart: unless-stopped
-    stdin_open: false
-    tty: false
-
-    networks:
-      - gateway-net
-
+    ports:
+      - "3333:3333"
     environment:
-      # Aponta as bibliotecas SSL do Python/Node para a CA do Gateway
-      SSL_CERT_FILE:       "/certs/gateway-ca.crt"
-      REQUESTS_CA_BUNDLE:  "/certs/gateway-ca.crt"
-      NODE_EXTRA_CA_CERTS: "/certs/gateway-ca.crt"
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
+      - FASTMCP_PORT=${FASTMCP_PORT:-3333}
+      - FASTMCP_LOG_LEVEL=${FASTMCP_LOG_LEVEL:-INFO}
+      - KUBECONFIG=/app/config
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
 
     volumes:
-      # CA do gateway para que o AgentK confie nos certificados forjados
-      - gateway-certs:/certs:ro
+      - ~/.kube/config-embedded:/app/config:ro
 
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "3"
+    networks:
+      - agentk-network
+      - minikube
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Cliente Streamlit AgentK
+  # ---------------------------------------------------------------------------
+  agentk-client:
+    build:
+      context: ./Agentk-Sugest/client
+      dockerfile: Dockerfile
+    container_name: agentk-streamlit-client
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "8501:8501"
+
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
+      - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+      # Direciona chamadas HTTP/TLS do cliente para o gateway
+      - HTTPS_PROXY=${HTTPS_PROXY:-http://agentk-gateway:8080}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://agentk-gateway:8080/v1}
+
+    networks:
+      - agentk-network
+
+    depends_on:
+      agentk-server:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Keycloak
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.4
+    container_name: keycloak
+    command: start-dev
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_DB=dev-file
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - agentk-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # OAuth2 Proxy
+  # ---------------------------------------------------------------------------
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: oauth2-proxy
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://agentk-client:8501
+      - --provider=keycloak-oidc
+      - --client-id=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
+      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:-SEU_CLIENT_SECRET}
+      - --redeem-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/token
+      - --oidc-issuer-url=http://keycloak:8080/realms/agentk
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
+      - --cookie-secure=false
+      - --email-domain=*
+      - --skip-provider-button=true
+      - --oidc-extra-audience=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
+      - --whitelist-domain=keycloak
+      - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
+    ports:
+      - "127.0.0.1:4180:4180"
+    networks:
+      - agentk-network
+    depends_on:
+      - keycloak
+      - agentk-client
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Ollama — LLM Local
@@ -136,27 +173,43 @@ services:
     restart: unless-stopped
     entrypoint: [ "sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:1.5b && wait" ]
     networks:
-      - gateway-net
+      - agentk-network
 
-# =============================================================================
-# Volumes nomeados — persistem dados entre recriações de containers
-# =============================================================================
-volumes:
-  gateway-certs:
-    name: agentk-gateway-certs
-  gateway-keys:
-    name: agentk-gateway-keys
-  ollama-data:
-    name: ollama-data
+  # ---------------------------------------------------------------------------
+  # Nginx - Reverse Proxy com HTTPS
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    networks:
+      - agentk-network
+    depends_on:
+      - oauth2-proxy
+    restart: unless-stopped
 
 # =============================================================================
 # Redes
 # =============================================================================
 networks:
-  # Rede isolada para comunicação privada entre gateway e AgentK
-  gateway-net:
-    name: agentk-gateway-net
+  agentk-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: "172.28.0.0/24"
+    name: agentk-network
+  minikube:
+    external: true
+    name: minikube
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  agentk-logs:
+    driver: local
+  keycloak-data:
+    driver: local
+  ollama-data:
+    driver: local

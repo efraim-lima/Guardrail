@@ -2,11 +2,20 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsParameters;
+import com.sun.net.httpserver.HttpsServer;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 
@@ -46,14 +55,49 @@ public class PromptValidator implements Runnable {
     @Override
     public void run() {
         try {
-            this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 128);
+            String keystorePath = System.getenv("KEYSTORE_PATH");
+            if (keystorePath != null && !keystorePath.isBlank()) {
+                String keystorePass = System.getenv().getOrDefault("KEYSTORE_PASSWORD", "gateway-secret");
+                char[] password = keystorePass.toCharArray();
+                
+                KeyStore ks = KeyStore.getInstance("PKCS12");
+                try (FileInputStream fis = new FileInputStream(keystorePath)) {
+                    ks.load(fis, password);
+                }
+                
+                KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+                kmf.init(ks, password);
+                
+                TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+                tmf.init(ks);
+                
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+                
+                HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress("0.0.0.0", port), 128);
+                httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
+                    public void configure(HttpsParameters params) {
+                        try {
+                            SSLContext c = getSSLContext();
+                            params.setSSLParameters(c.getDefaultSSLParameters());
+                        } catch (Exception ex) {
+                            System.out.println("Erro ao configurar HTTPS");
+                        }
+                    }
+                });
+                this.server = httpsServer;
+                log("Webhook de validação iniciado com HTTPS em https://0.0.0.0:" + port + path);
+            } else {
+                this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 128);
+                log("Webhook de validação iniciado com HTTP em http://0.0.0.0:" + port + path);
+            }
+            
             this.server.createContext(path, new ValidateHandler());
             this.server.createContext("/health", new HealthHandler());
             this.server.setExecutor(executorService);
             this.server.start();
 
-            log("Webhook de validação iniciado em http://0.0.0.0:" + port + path);
-            log("Healthcheck em http://0.0.0.0:" + port + "/health");
+            log("Healthcheck em http(s)://0.0.0.0:" + port + "/health");
 
             while (running) {
                 Thread.sleep(1000);
