@@ -122,8 +122,6 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:443:443"
     networks:
       - agentk-network
-    depends_on:
-      - agentk-client
     restart: unless-stopped
 
 # =============================================================================
