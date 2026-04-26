@@ -157,7 +157,6 @@ services:
       - agentk-network
     depends_on:
       - keycloak
-      - agentk-client
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------

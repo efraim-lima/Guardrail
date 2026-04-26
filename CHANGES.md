@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Integridade do Projeto Docker Compose Após Desacoplamento do AgentK
+
+### Eliminação de Referência a Serviço Indefinido
+- **Ajuste no `docker-compose.yaml`**: Foi removida, no serviço `oauth2-proxy`, a entrada `agentk-client` da diretiva `depends_on`, uma vez que o respectivo serviço havia sido previamente comentado para viabilizar a execução segregada dos componentes do ecossistema AgentK. A correção restaura a validade estrutural do manifesto Docker Compose, eliminando o erro de carregamento `depends on undefined service` e preservando a inicialização dos serviços remanescentes de forma consistente.
+
 ## 26 de Abril de 2026 - Desacoplamento Operacional do Compose Principal em Relação ao Compose do AgentK
 
 ### Isolamento de Ferramentas para Execução Independente
