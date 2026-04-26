@@ -1,5 +1,12 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Mitigação de Colisão de Porta do AgentK Client com Alteração Mínima
+
+### Parametrização da Porta Externa no Compose da Raiz (Preservando o Compose Original do AgentK)
+- **Ajuste em `docker-compose.yaml` e `docker-compose.init.yaml`**: A publicação de porta do serviço `agentk-client` foi alterada de mapeamento fixo (`8501:8501`) para mapeamento parametrizado (`${AGENTK_CLIENT_HOST_PORT:-8502}:8501`, com `HOST_BIND_IP`), mantendo a porta interna do container em `8501` e deslocando por padrão apenas a porta externa do host para `8502`.
+- **Preservação do sistema AgentK**: O arquivo original `Agentk-Sugest/docker-compose.yml` foi mantido inalterado para reduzir impacto no fluxo nativo do projeto AgentK e cumprir a diretriz de mínima intervenção.
+- **Atualização operacional em `start.sh`**: O endpoint exibido para acesso direto ao client foi atualizado para refletir a nova variável `${AGENTK_CLIENT_HOST_PORT:-8502}`.
+
 ## 26 de Abril de 2026 - Mitigação de Colisão de Porta do MCP Server no Host
 
 ### Parametrização da Porta Externa do Serviço `agentk-server`

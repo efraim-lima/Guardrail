@@ -69,7 +69,7 @@ main() {
     log_info "Próximos passos:"
     echo "  - Acessar app via domínio: https://agentk.local"
     echo "  - Acessar app via IP da VM: https://<IP_DA_VM>"
-    echo "  - Acessar AgentK Client direto: http://<IP_DA_VM>:8501"
+    echo "  - Acessar AgentK Client direto: http://<IP_DA_VM>:${AGENTK_CLIENT_HOST_PORT:-8502}"
     echo "  - Acessar MCP Server direto: http://<IP_DA_VM>:${AGENTK_MCP_HOST_PORT:-3334}"
     echo "  - Acessar Ollama: http://<IP_DA_VM>:${OLLAMA_HOST_PORT:-11435}"
     echo "  - Acessar Keycloak: http://<IP_DA_VM>:8082"
