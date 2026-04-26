@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Mitigação de Colisão de Porta do Ollama no Host
+
+### Parametrização da Porta Externa no Docker Compose
+- **Ajuste em `docker-compose.yaml` e `docker-compose.init.yaml`**: A exposição de porta do serviço `ollama` foi alterada de mapeamento fixo (`11434:11434`) para mapeamento parametrizado (`${OLLAMA_HOST_PORT:-11435}:11434`). A mudança preserva a porta interna do contêiner (`11434`) para comunicação entre serviços na rede Docker e desloca, por padrão, a porta do host para `11435`, mitigando conflitos de bind quando a porta `11434` já está ocupada por instância local preexistente.
+
 ## 26 de Abril de 2026 - Automação de Setup em Fluxo Docker
 
 ### Criação de Scripts de Inicialização Automatizada
