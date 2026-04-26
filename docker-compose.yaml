@@ -41,6 +41,12 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Servidor MCP AgentK
@@ -63,6 +69,12 @@ services:
       - ~/.kube/config-embedded:/app/config:ro
     networks:
       - agentk-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -85,8 +97,10 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - agentk-server
-      - agentk-gateway
+      agentk-server:
+        condition: service_healthy
+      agentk-gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
