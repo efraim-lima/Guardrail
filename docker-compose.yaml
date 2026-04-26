@@ -79,7 +79,7 @@ services:
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
       - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
       - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
-      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333/sse}
       - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     networks:

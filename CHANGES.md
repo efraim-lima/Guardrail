@@ -3,6 +3,7 @@
 ## 26 de Abril de 2026 - Correção de Conectividade e Resolução de Nomes do Gateway
 
 - **Unificação da Orquestração**: Os serviços `agentk-server` e `agentk-client` foram reincorporados ao `docker-compose.yaml` da raiz do projeto. Esta mudança elimina problemas de resolução de nome (DNS) entre containers de diferentes projetos e simplifica o fluxo de inicialização.
+- **Correção de Endpoint MCP**: Ajustada a variável `MCP_SERVER_URL` para incluir o sufixo `/sse` nos arquivos `docker-compose.yaml` e `docker-compose.init.yaml`. A alteração resolve o erro 404 encontrado na inicialização do cliente MCP, direcionando-o para o endpoint correto do servidor FastMCP.
 - **Estabilização da Rede Docker**: A rede `agentk-network` foi alterada de `external: true` para `driver: bridge` no manifesto unificado. O Docker Compose agora gerencia a criação da rede automaticamente, garantindo conectividade imediata entre o Gateway e o Cliente AgentK.
 - **Ajuste em `Agentk-Sugest/client/app/services/chat_service.py`**: Introduzida lógica de sanitização de URL para forçar o uso do protocolo HTTPS na comunicação com o Gateway, prevenindo erros de protocolo caso a variável de ambiente seja configurada incorretamente.
 - **Correção em `nginx/nginx.conf`**: Implementado suporte a WebSockets (Upgrade/Connection) no bloco de proxy para o `agentk-client`. A alteração resolve o travamento na tela de "Loading" do Streamlit ao ser acessado via HTTPS.
