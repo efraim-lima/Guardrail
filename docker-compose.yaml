@@ -10,7 +10,9 @@ services:
   # Gateway Java (Executa o JAR pré-compilado ofuscado)
   # ---------------------------------------------------------------------------
   gateway:
-    image: eclipse-temurin:21-jre-jammy
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: agentk-gateway
     restart: unless-stopped
     ports:
@@ -28,7 +30,6 @@ services:
     depends_on:
       - ollama
     volumes:
-      - ./build/libs/gateway-sensor-1.0.0-obf.jar:/app/app.jar:ro
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro

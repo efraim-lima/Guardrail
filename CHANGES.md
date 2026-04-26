@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Adequação de Portabilidade do Serviço Gateway no Docker Compose
+
+### Substituição de Bind-Mount de Artefato por Build Nativo de Imagem
+- **Refatoração do serviço `gateway` em `docker-compose.yaml`**: A definição foi alterada de `image` com bind-mount explícito do artefato `./build/libs/gateway-sensor-1.0.0-obf.jar:/app/app.jar:ro` para estratégia de `build` local (`context: .`, `dockerfile: Dockerfile`), preservando o `entrypoint` direto em `java -jar /app/app.jar`. A mudança elimina a dependência de caminhos absolutos do hospedeiro no momento de execução (`not a directory` em ambiente com diretório de trabalho divergente), assegurando comportamento reprodutível em ambientes distintos sem exigir pré-posicionamento manual do JAR no host invocador.
+
 ## 26 de Abril de 2026 - Correção de Integridade do Projeto Docker Compose Após Desacoplamento do AgentK
 
 ### Eliminação de Referência a Serviço Indefinido
