@@ -162,3 +162,10 @@
 ### Ajuste de Roteamento e Telemetria de Rede
 - **Correção no `nginx/nginx.conf`**: O parâmetro `server_name` foi expandido de `agentk.local` para `agentk.local _`. Esta alteração permite que o Nginx aceite e processe requisições direcionadas diretamente ao endereço IP da VM (onde o cabeçalho `Host` não corresponde ao domínio nominal), facilitando o acesso externo em ambientes de teste sem necessidade de configuração prévia de DNS no cliente.
 - **Resolução de Erro de Conexão MCP (SSE)**: Identificada falha crítica na inicialização do serviço AgentK (`ExceptionGroup` no Streamlit). O problema residia na omissão do endpoint `/sse` na variável `MCP_SERVER_URL`. O framework `FastMCP`, quando operando em modo HTTP, expõe obrigatoriamente o fluxo de eventos neste caminho específico. A correção foi aplicada tanto no `docker-compose.yaml` da raiz quanto no subdiretório `Agentk-Sugest/`, normalizando a comunicação interna entre o cliente Streamlit e o servidor MCP.
+
+## 26 de Abril de 2026 - Adaptação de Contexto de Build para Orquestração Unificada
+
+### Resolução de Erro de Build ("/logs": not found)
+- **Adaptação na Camada do Gateway (Raiz)**: O arquivo `docker-compose.yaml` principal foi configurado para utilizar a raiz do repositório (`context: .`) como base para todos os serviços. Esta "adaptação do lado do Gateway" permite que o Docker BuildKit acesse transversalmente as pastas de código e de logs compartilhadas.
+- **Refatoração dos Dockerfiles do AgentK**: Os manifestos de construção em `Agentk-Sugest/server/Dockerfile` e `Agentk-Sugest/client/Dockerfile` foram atualizados para utilizar caminhos relativos à raiz do projeto. Esta mudança garante a integridade do build quando invocado pela stack principal, resolvendo definitivamente a falha de localização do módulo de logs.
+- **Preservação da Orquestração Secundária**: O arquivo `Agentk-Sugest/docker-compose.yml` foi mantido rigorosamente intacto conforme solicitado, servindo como referência de configuração local, enquanto a inteligência de integração foi movida para o orquestrador raiz.

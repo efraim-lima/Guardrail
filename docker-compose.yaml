@@ -47,8 +47,8 @@ services:
   # ---------------------------------------------------------------------------
   agentk-server:
     build:
-      context: ./Agentk-Sugest
-      dockerfile: server/Dockerfile
+      context: .
+      dockerfile: Agentk-Sugest/server/Dockerfile
     container_name: agentk-mcp-server
     # Porta comentada na raiz para forçar acesso via Nginx (443)
     # ports:
@@ -77,8 +77,8 @@ services:
   # ---------------------------------------------------------------------------
   agentk-client:
     build:
-      context: ./Agentk-Sugest
-      dockerfile: client/Dockerfile
+      context: .
+      dockerfile: Agentk-Sugest/client/Dockerfile
     container_name: agentk-streamlit-client
     extra_hosts:
       - "host.docker.internal:host-gateway"
