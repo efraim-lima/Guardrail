@@ -1,5 +1,10 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Mitigação de Colisão de Porta do MCP Server no Host
+
+### Parametrização da Porta Externa do Serviço `agentk-server`
+- **Ajuste em `docker-compose.yaml`, `docker-compose.init.yaml` e `Agentk-Sugest/docker-compose.yml`**: A publicação de porta do serviço MCP foi alterada de mapeamento fixo (`3333:3333`) para mapeamento parametrizado (`${AGENTK_MCP_HOST_PORT:-3334}:3333`, respeitando também `HOST_BIND_IP` nos manifests da raiz). A mudança preserva a porta interna `3333` na rede Docker para comunicação entre containers e desloca, por padrão, a porta exposta no host para `3334`, eliminando o erro de bind quando `3333` já está em uso por processo preexistente.
+
 ## 26 de Abril de 2026 - Correção Sistêmica de Conectividade entre Nginx, AgentK Client e MCP Server
 
 ### Reativação de Serviços e Correção de Roteamento de Borda
