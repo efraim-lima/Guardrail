@@ -11,5 +11,5 @@
 set -e
 
 echo "[Init] Executando setup.sh..."
-bash /workspace/setup.sh
+SKIP_HOSTS_ENTRY=1 AGENTK_HOST_IP=auto bash /workspace/setup.sh
 echo "[Init] Setup concluído. Infraestrutura pronta."

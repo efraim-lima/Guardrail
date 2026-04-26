@@ -1,5 +1,15 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Mapeamento Dinâmico de `agentk.local` e Execução Garantida do Setup no Fluxo Init
+
+### Evolução do `setup.sh` para IP Dinâmico e Upsert Idempotente em `/etc/hosts`
+- **Atualização de `setup.sh`**: O parâmetro `AGENTK_HOST_IP` passou a suportar resolução automática (`auto`) do IP da VM por rota padrão (`ip route get`) com fallback para `hostname -I` e, em último caso, `127.0.0.1`. Foi implementado `upsert` idempotente da entrada `agentk.local`, removendo mapeamentos antigos e inserindo o novo valor de forma determinística.
+- **Suporte a execução em container init**: Introduzida a flag `SKIP_HOSTS_ENTRY` para permitir geração de certificados em ambiente containerizado sem tentativa indevida de alteração do `/etc/hosts` do host.
+
+### Garantia de Execução de Setup no Docker durante Instalação
+- **Atualização de `docker-entrypoint-init.sh`**: O setup passou a ser invocado com `SKIP_HOSTS_ENTRY=1 AGENTK_HOST_IP=auto`, tornando o comportamento explícito para execução sob container.
+- **Atualização de `docker-compose.init.yaml`**: O serviço `init` foi reforçado para instalar dependências necessárias (`bash`, `openssl`, `iproute2`) antes da execução do setup e os serviços dependentes foram convertidos para `depends_on` com `condition: service_completed_successfully`, garantindo ordenação correta e execução efetiva do setup no fluxo de instalação via Docker.
+
 ## 26 de Abril de 2026 - Mitigação de Colisão de Porta do AgentK Client com Alteração Mínima
 
 ### Parametrização da Porta Externa no Compose da Raiz (Preservando o Compose Original do AgentK)

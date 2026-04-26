@@ -18,7 +18,10 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
-    entrypoint: /workspace/docker-entrypoint-init.sh
+    entrypoint:
+      - sh
+      - -c
+      - apk add --no-cache bash openssl iproute2 >/dev/null && bash /workspace/docker-entrypoint-init.sh
     # Este serviço executa e termina imediatamente após completar
     # Os outros serviços esperam por ele antes de iniciar (via depends_on)
 
@@ -44,8 +47,10 @@ services:
       - KEYSTORE_PASSWORD=gateway-secret
     entrypoint: [ "java", "-jar", "/app/app.jar" ]
     depends_on:
-      - init
-      - ollama
+      init:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
     volumes:
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
@@ -85,7 +90,8 @@ services:
       retries: 5
       start_period: 20s
     depends_on:
-      - init
+      init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -112,9 +118,12 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - init
-      - gateway
-      - agentk-server
+      init:
+        condition: service_completed_successfully
+      gateway:
+        condition: service_started
+      agentk-server:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -135,7 +144,8 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - init
+      init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -164,9 +174,12 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - init
-      - keycloak
-      - agentk-client
+      init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_started
+      agentk-client:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -184,7 +197,8 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - init
+      init:
+        condition: service_completed_successfully
 
   # ---------------------------------------------------------------------------
   # Nginx - Reverse Proxy HTTPS para AgentK Client
@@ -201,8 +215,10 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - init
-      - agentk-client
+      init:
+        condition: service_completed_successfully
+      agentk-client:
+        condition: service_started
     restart: unless-stopped
 
 # =============================================================================
