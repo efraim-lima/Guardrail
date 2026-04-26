@@ -169,3 +169,10 @@
 - **Adaptação na Camada do Gateway (Raiz)**: O arquivo `docker-compose.yaml` principal foi configurado para utilizar a raiz do repositório (`context: .`) como base para todos os serviços. Esta "adaptação do lado do Gateway" permite que o Docker BuildKit acesse transversalmente as pastas de código e de logs compartilhadas.
 - **Refatoração dos Dockerfiles do AgentK**: Os manifestos de construção em `Agentk-Sugest/server/Dockerfile` e `Agentk-Sugest/client/Dockerfile` foram atualizados para utilizar caminhos relativos à raiz do projeto. Esta mudança garante a integridade do build quando invocado pela stack principal, resolvendo definitivamente a falha de localização do módulo de logs.
 - **Preservação da Orquestração Secundária**: O arquivo `Agentk-Sugest/docker-compose.yml` foi mantido rigorosamente intacto conforme solicitado, servindo como referência de configuração local, enquanto a inteligência de integração foi movida para o orquestrador raiz.
+
+## 26 de Abril de 2026 - Autonomia de Serviços e Resolução de Contexto de Build
+
+### Independência de Contexto (AgentK)
+- **Sincronização de Dependências**: Realizada a cópia física da pasta `logs/` para dentro de `Agentk-Sugest/server/` e `Agentk-Sugest/client/`. Esta medida de "infraestrutura por redundância" resolve o erro de build provocado pelo uso de contextos restritos em arquivos Compose protegidos contra alteração.
+- **Simplificação de Manifestos de Construção**: Os `Dockerfile`s foram ajustados para operar em contextos isolados (`COPY requirements.txt .`), tornando-os compatíveis tanto com a orquestração raiz quanto com o comando `docker compose up` executado diretamente na pasta do subprojeto.
+- **Isolamento na Camada Gateway**: O `docker-compose.yaml` raiz foi atualizado para utilizar contextos específicos de serviço (`context: ./Agentk-Sugest/server`), garantindo que o build da stack principal seja robusto e independente.
