@@ -7,7 +7,8 @@
 - **Estabilização da Rede Docker**: A rede `agentk-network` foi alterada de `external: true` para `driver: bridge` no manifesto unificado. O Docker Compose agora gerencia a criação da rede automaticamente, garantindo conectividade imediata entre o Gateway e o Cliente AgentK.
 - **Ajuste em `Agentk-Sugest/client/app/services/chat_service.py`**: Introduzida lógica de sanitização de URL para forçar o uso do protocolo HTTPS na comunicação com o Gateway, prevenindo erros de protocolo caso a variável de ambiente seja configurada incorretamente.
 - **Correção em `nginx/nginx.conf`**: Implementado suporte a WebSockets (Upgrade/Connection) no bloco de proxy para o `agentk-client`. A alteração resolve o travamento na tela de "Loading" do Streamlit ao ser acessado via HTTPS.
-- **Resiliência com Healthchecks**: Implementados mecanismos de verificação de saúde (`healthcheck`) para o `agentk-gateway` e `agentk-server`. O serviço `agentk-client` agora utiliza a condição `service_healthy` no `depends_on`, garantindo que a interface só inicie após a infraestrutura de backend estar totalmente operacional, o que mitiga o erro 502 Bad Gateway.
+- **Resiliência com Healthchecks**: Implementados mecanismos de verificação de saúde para o `agentk-gateway` (via `pgrep`) e `agentk-server` (via socket). O serviço `agentk-client` agora aguarda a estabilização completa do backend via `service_healthy`, reduzindo erros de inicialização.
+- **Robustez do Gateway**: Removido o `entrypoint` fixo do Java no `docker-compose.yaml` para permitir que o script `docker-entrypoint.sh` original configure permissões e certificados corretamente, resolvendo falhas imediatas de boot.
 
 ### Refinamento de Scripts e Logs
 - **Ajuste em `start.sh`**: Corrigida a instrução de acesso ao Gateway para refletir o uso de HTTPS (`https://localhost:8081`). A alteração alinha os logs operacionais com a implementação real de segurança do sensor.
