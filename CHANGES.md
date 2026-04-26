@@ -1,5 +1,14 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Conectividade e Resolução de Nomes do Gateway
+
+### Estabilização da Rede Docker
+- **Ajuste em `docker-compose.yaml`**: Alterada a definição da rede `agentk-network` de `external: true` para `driver: bridge`. Esta mudança garante que o Docker Compose crie a rede automaticamente caso ela não exista, evitando erros de inicialização na stack principal quando o subprojeto AgentK não foi iniciado previamente.
+- **Ajuste em `Agentk-Sugest/docker-compose.yml`**: Introduzida a variável de ambiente `GATEWAY_VALIDATE_URL` no serviço `agentk-client`. A configuração define explicitamente o endpoint de validação em `https://agentk-gateway:8080/validar`, eliminando a dependência de resoluções de fallback e garantindo o uso do protocolo HTTPS nativo do sensor.
+
+### Refinamento de Scripts e Logs
+- **Ajuste em `start.sh`**: Corrigida a instrução de acesso ao Gateway para refletir o uso de HTTPS (`https://localhost:8081`). A alteração alinha os logs operacionais com a implementação real de segurança do sensor.
+
 ## 26 de Abril de 2026 - Mapeamento Dinâmico de `agentk.local` e Execução Garantida do Setup no Fluxo Init
 
 ### Evolução do `setup.sh` para IP Dinâmico e Upsert Idempotente em `/etc/hosts`

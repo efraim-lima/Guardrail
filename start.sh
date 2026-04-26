@@ -73,7 +73,7 @@ main() {
     echo "  - Acessar MCP Server direto: http://<IP_DA_VM>:${AGENTK_MCP_HOST_PORT:-3334}"
     echo "  - Acessar Ollama: http://<IP_DA_VM>:${OLLAMA_HOST_PORT:-11435}"
     echo "  - Acessar Keycloak: http://<IP_DA_VM>:8082"
-    echo "  - Acessar Gateway webhook: http://localhost:8081"
+    log_info "  Acessar Gateway webhook: https://localhost:8081"
     echo ""
     log_info "Para parar os serviços:"
     echo "  docker compose down"
