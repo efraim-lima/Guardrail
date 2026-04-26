@@ -2,9 +2,8 @@
 
 ## 26 de Abril de 2026 - Correção de Conectividade e Resolução de Nomes do Gateway
 
-### Estabilização da Rede Docker
-- **Ajuste em `docker-compose.yaml`**: Alterada a definição da rede `agentk-network` de `external: true` para `driver: bridge`. Esta mudança garante que o Docker Compose crie a rede automaticamente caso ela não exista, evitando erros de inicialização na stack principal quando o subprojeto AgentK não foi iniciado previamente.
-- **Ajuste em `Agentk-Sugest/docker-compose.yml`**: Introduzida a variável de ambiente `GATEWAY_VALIDATE_URL` no serviço `agentk-client`. A configuração define explicitamente o endpoint de validação em `https://agentk-gateway:8080/validar`, eliminando a dependência de resoluções de fallback e garantindo o uso do protocolo HTTPS nativo do sensor.
+- **Unificação da Orquestração**: Os serviços `agentk-server` e `agentk-client` foram reincorporados ao `docker-compose.yaml` da raiz do projeto. Esta mudança elimina problemas de resolução de nome (DNS) entre containers de diferentes projetos e simplifica o fluxo de inicialização.
+- **Estabilização da Rede Docker**: A rede `agentk-network` foi alterada de `external: true` para `driver: bridge` no manifesto unificado. O Docker Compose agora gerencia a criação da rede automaticamente, garantindo conectividade imediata entre o Gateway e o Cliente AgentK.
 - **Ajuste em `Agentk-Sugest/client/app/services/chat_service.py`**: Introduzida lógica de sanitização de URL para forçar o uso do protocolo HTTPS na comunicação com o Gateway, prevenindo erros de protocolo caso a variável de ambiente seja configurada incorretamente.
 - **Correção em `nginx/nginx.conf`**: Implementado suporte a WebSockets (Upgrade/Connection) no bloco de proxy para o `agentk-client`. A alteração resolve o travamento na tela de "Loading" do Streamlit ao ser acessado via HTTPS.
 

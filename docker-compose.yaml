@@ -42,8 +42,52 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # O serviço agentk-client foi movido para o compose separado em ./Agentk-Sugest/docker-compose.yml
-  # Ele se comunica com esta stack através da rede externa 'agentk-network'
+  # ---------------------------------------------------------------------------
+  # Servidor MCP AgentK
+  # ---------------------------------------------------------------------------
+  agentk-server:
+    build:
+      context: ./Agentk-Sugest/server
+      dockerfile: Dockerfile
+    container_name: agentk-mcp-server
+    ports:
+      - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_MCP_HOST_PORT:-3334}:3333"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - FASTMCP_HOST=${FASTMCP_HOST:-0.0.0.0}
+      - FASTMCP_PORT=${FASTMCP_PORT:-3333}
+      - FASTMCP_LOG_LEVEL=${FASTMCP_LOG_LEVEL:-INFO}
+      - KUBECONFIG=/app/config
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ~/.kube/config-embedded:/app/config:ro
+    networks:
+      - agentk-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Cliente Streamlit AgentK
+  # ---------------------------------------------------------------------------
+  agentk-client:
+    build:
+      context: ./Agentk-Sugest/client
+      dockerfile: Dockerfile
+    container_name: agentk-streamlit-client
+    ports:
+      - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_CLIENT_HOST_PORT:-8502}:8501"
+    environment:
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+      - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
+      - STREAMLIT_SERVER_ENABLE_CORS=${STREAMLIT_SERVER_ENABLE_CORS:-false}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333}
+      - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    networks:
+      - agentk-network
+    depends_on:
+      - agentk-server
+      - agentk-gateway
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Keycloak
@@ -91,6 +135,7 @@ services:
       - agentk-network
     depends_on:
       - keycloak
+      - agentk-client
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -122,6 +167,8 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:443:443"
     networks:
       - agentk-network
+    depends_on:
+      - agentk-client
     restart: unless-stopped
 
 # =============================================================================
@@ -129,16 +176,15 @@ services:
 # =============================================================================
 networks:
   agentk-network:
-    #driver: bridge
-    external: true
+    driver: bridge
     name: agentk-network
   # minikube:
   #   external: true
   #   name: minikube
 
-  # =============================================================================
-  # Volumes
-  # =============================================================================
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   # agentk-logs:
   #   driver: local
