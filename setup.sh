@@ -199,7 +199,7 @@ ensure_env() {
 # ---------------------------------------------------------------------------
 wait_for_healthy() {
     local container="$1"
-    local max_wait="${2:-180}"
+    local max_wait="${2:-10}"
     local elapsed=0
     log_info "Aguardando ${container} ficar healthy (max ${max_wait}s)..."
     while true; do

@@ -1,0 +1,84 @@
+flowchart TD
+    subgraph USER["👤 Usuário (Navegador)"]
+        A["Acessa https://agentk.local"]
+    end
+
+    subgraph EDGE["🌐 Camada de Borda — Nginx (HTTPS:443)"]
+        B["Nginx\nProxy Reverso TLS\nCertificado SSL auto-assinado"]
+    end
+
+    subgraph AUTH["🔐 Camada de Autenticação"]
+        C["OAuth2 Proxy\n(porta 4180 — loopback only)"]
+        D["Keycloak v26\nIdentity Provider OIDC\nhttps://agentk.local/keycloak"]
+    end
+
+    subgraph CLIENT["🖥️ Interface AgentK — Streamlit"]
+        E["agentk-client\n(porta 8501 — rede interna)"]
+        E1["ChatService.process_llm_request()"]
+        E2["Captura: X-Forwarded-Email\nIdentidade do usuário"]
+    end
+
+    subgraph GUARDRAIL["🛡️ Guardrail — Gateway Java"]
+        F["agentk-gateway\n(HTTPS:8080 — rede interna)"]
+        F1["PromptValidator.java\nPOST /validar\nRecebe JSON: prompt"]
+        F2["SecurityClassifier.java\nMonta AI Prompt com contexto\ndo Sistema AgentK + User Prompt"]
+        F3["Ollama / qwen2.5:1.5b\nModelo local de classificação"]
+        F4["Veredito:\nSAFE | SUSPECT | UNCERTAIN | RISKY | UNSAFE"]
+    end
+
+    subgraph DECISION["⚖️ Módulo de Decisão — ChatService"]
+        G1["✅ SAFE → Envia para OpenAI"]
+        G2["⚠️ SUSPECT / UNCERTAIN → Bloqueia\nExibe aviso ao usuário"]
+        G3["🔒 RISKY → Abre modal de autorização\nValida credencial admin no Keycloak"]
+        G4["🛑 UNSAFE → Bloqueio crítico\nSem possibilidade de prosseguir"]
+    end
+
+    subgraph LLM["🤖 LLM — OpenAI"]
+        H["gpt-4.1\nProcessa a requisição\nRetorna resposta"]
+    end
+
+    subgraph MCP["⚙️ AgentK Server — MCP"]
+        I["agentk-server FastMCP\n(porta 3333 — rede interna)"]
+        I1["Ferramentas Kubernetes:\nlistar / extrair / aplicar / deletar / validar"]
+        I2["K8sExtractor + K8sApplier\ncomunicação com cluster"]
+    end
+
+    subgraph LOGS["📋 Sistema de Auditoria e Logs"]
+        L1["agentk-client.log\nUSER | PROMPT | VERDICT | RESPONSE"]
+        L2["agentk-server.log\nACTION | NAMESPACE | STATUS | RESOURCE"]
+        L3["Volume bind-mount\nAgentk-Sugest/logs/\npersistência no host"]
+    end
+
+    A -->|"HTTPS GET /"| B
+    B -->|"Verifica sessão OAuth2"| C
+    C -->|"Sem token → redireciona login"| D
+    D -->|"Token JWT válido"| C
+    C -->|"Injeta X-Forwarded-Email\nX-Forwarded-User"| E
+
+    E --> E2
+    E2 --> E1
+    E1 -->|"POST /validar\njson: prompt"| F
+
+    F --> F1
+    F1 --> F2
+    F2 -->|"Prompt contextualizado\n+ delimitadores USER_PROMPT"| F3
+    F3 -->|"Retorna uma palavra"| F4
+    F4 -->|"json: prompt + veredito"| E1
+
+    E1 --> G1
+    E1 --> G2
+    E1 --> G3
+    E1 --> G4
+
+    G3 -->|"Valida senha admin\nPOST /token Keycloak"| D
+    G1 -->|"complete_chat(tools)"| H
+    H -->|"Resposta texto / tool_calls"| E
+
+    E -->|"Chama ferramenta MCP"| I
+    I --> I1
+    I1 --> I2
+
+    E1 -->|"AUDIT LOG"| L1
+    I1 -->|"AUDIT LOG"| L2
+    L1 --> L3
+    L2 --> L3
