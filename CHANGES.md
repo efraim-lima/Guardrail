@@ -1,5 +1,28 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Bypass de Autenticação (CWE-284: Broken Access Control)
+
+### Arquivos Modificados
+
+- **`docker-compose.yaml`** — Removida a diretiva `ports` do serviço `agentk-client`; porta do `oauth2-proxy` restringida a `127.0.0.1:4180`.
+
+### Descrição
+
+O serviço `agentk-client` era acessível diretamente via `http://<host>:8502`, contornando completamente o nginx e o oauth2-proxy. Qualquer usuário com acesso de rede à máquina conseguia usar a interface do AgentK sem autenticação — tornando o Keycloak e o oauth2-proxy ineficazes.
+
+### Causa-Raiz
+
+A diretiva `ports: ["0.0.0.0:8502:8501"]` no serviço `agentk-client` publicava a porta do Streamlit diretamente no host. Embora o fluxo oficial de autenticação passe por `nginx → oauth2-proxy → agentk-client`, a exposição direta da porta criava um caminho alternativo sem nenhuma verificação de identidade (OWASP A01:2021 — Broken Access Control).
+
+O mesmo problema existia no `oauth2-proxy`: exposto em `0.0.0.0:4180` sem TLS, era acessível diretamente sem a camada de criptografia do nginx.
+
+### Solução Aplicada
+
+- **`agentk-client`**: Bloco `ports` removido integralmente. O container permanece alcançável apenas dentro da rede `agentk-network`, exclusivamente pelo `oauth2-proxy`. O único ponto de entrada externo é o nginx na porta 443.
+- **`oauth2-proxy`**: Porta restringida a `127.0.0.1:4180` (loopback apenas), mantendo a possibilidade de debug local sem expor o serviço externamente sem TLS.
+
+---
+
 ## 26 de Abril de 2026 - Correção do Fluxo de Autenticação: nginx → oauth2-proxy → Keycloak
 
 ### Arquivos Modificados

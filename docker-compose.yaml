@@ -88,8 +88,9 @@ services:
       context: ./Agentk-Sugest/client
       dockerfile: Dockerfile
     container_name: agentk-streamlit-client
-    ports:
-      - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_CLIENT_HOST_PORT:-8502}:8501"
+    # Porta removida intencionalmente: o agentk-client NÃO deve ser acessível
+    # diretamente do host. Todo tráfego deve passar por: nginx:443 → oauth2-proxy → aqui.
+    # Expor esta porta permite contornar completamente a autenticação Keycloak.
     environment:
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
       - STREAMLIT_SERVER_HEADLESS=${STREAMLIT_SERVER_HEADLESS:-true}
@@ -173,7 +174,9 @@ services:
       - --whitelist-domain=agentk.local
       - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
     ports:
-      - "${HOST_BIND_IP:-0.0.0.0}:4180:4180"
+      # Restrito a loopback: oauth2-proxy não usa TLS próprio, logo não deve ser
+      # exposto externamente. O nginx é o único ponto de entrada HTTPS autorizado.
+      - "127.0.0.1:4180:4180"
     networks:
       - agentk-network
     depends_on:
