@@ -84,11 +84,11 @@ upsert_env() {
     if [[ ! -f "$ENV_FILE" ]]; then
         [[ -f env.example ]] && cp env.example "$ENV_FILE" || touch "$ENV_FILE"
     fi
-    if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
-    else
-        echo "${key}=${value}" >> "$ENV_FILE"
-    fi
+    # Remove a entrada antiga se existir e adiciona a nova ao final
+    # Isso evita problemas com sed -i e regex complexos
+    grep -vE "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp" || true
+    echo "${key}=${value}" >> "${ENV_FILE}.tmp"
+    mv "${ENV_FILE}.tmp" "$ENV_FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -339,6 +339,9 @@ print_summary() {
     echo -e " ${BOLD}Acesso principal (requer autenticacao Keycloak):${NC}"
     echo -e "   Aplicacao AgentK : ${BOLD}https://${AGENTK_HOST_IP}/ ${NC}"
     echo -e "   Keycloak Admin   : ${BOLD}https://${AGENTK_HOST_IP}/keycloak/admin/${NC}"
+    echo ""
+    echo -e " ${YELLOW}NOTA:${NC} Se estiver acessando de fora da VM, certifique-se que o IP ${BOLD}${AGENTK_HOST_IP}${NC}"
+    echo -e " e alcancavel e que o seu navegador aceite o certificado auto-assinado."
     echo ""
     echo -e " ${BOLD}Endpoints de debug (localhost apenas):${NC}"
     echo -e "   Keycloak direto  : ${BOLD}http://localhost:8082/keycloak/${NC}"
