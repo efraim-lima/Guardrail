@@ -107,13 +107,14 @@ sync_env_ip() {
 
     # Grava o IP detectado no .env
     upsert_env "AGENTK_HOST_IP" "$detected_ip"
-    upsert_env "KC_HOSTNAME_URL" "https://${detected_ip}/keycloak"
-    upsert_env "KC_HOSTNAME_ADMIN_URL" "https://${detected_ip}/keycloak"
+    # Documentacao Keycloak 24: KC_HOSTNAME_URL nao deve incluir o path
+    upsert_env "KC_HOSTNAME_URL" "https://${detected_ip}"
+    upsert_env "KC_HOSTNAME_ADMIN_URL" "https://${detected_ip}"
 
     log_info "IP detectado automaticamente: ${detected_ip}"
     log_success "AGENTK_HOST_IP=${detected_ip} gravado em ${ENV_FILE}"
-    log_success "KC_HOSTNAME_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
-    log_success "KC_HOSTNAME_ADMIN_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
+    log_success "KC_HOSTNAME_URL=https://${detected_ip} gravado em ${ENV_FILE}"
+    log_success "KC_HOSTNAME_ADMIN_URL=https://${detected_ip} gravado em ${ENV_FILE}"
 
     # Se o IP mudou e o certificado ja existe, remove para forcar regeracao
     # (o cert antigo nao teria o novo IP nos SANs)
