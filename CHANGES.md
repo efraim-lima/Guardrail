@@ -3,9 +3,9 @@
 ## [2026-04-27] - Consolidação da Camada de Orquestração e Segurança Dinâmica
 
 ### Arquivos Modificados:
-- `setup.sh`: Transformado no orquestrador principal (Regente) do ecossistema Guardrail. Antecipada a inicialização do Nginx para a Fase 2 e ajustadas URLs do Keycloak para conformidade com a v24.
+- `setup.sh`: Transformado no orquestrador principal (Regente) do ecossistema Guardrail. Antecipada a inicialização do Nginx para a Fase 2 e ajustadas URLs do Keycloak.
 - `nginx/nginx.conf`: Atualizado para refletir o novo fluxo de configuração e reforçar instruções de segurança.
-- `docker-compose.yaml`: Habilitado `KC_HEALTH_ENABLED=true`, corrigido healthcheck do Keycloak para usar `/dev/tcp` e liberada a porta `8082`. Adicionado `--http-relative-path=/keycloak` ao comando para corrigir redirecionamentos incorretos.
+- `docker-compose.yaml`: Atualizado Keycloak para v26.0.0. Adotadas as variáveis `KC_BOOTSTRAP_ADMIN_USERNAME` e `KC_BOOTSTRAP_ADMIN_PASSWORD`. Mantido `--http-relative-path=/keycloak` para compatibilidade com o proxy.
 - `start.sh`: [REMOVIDO] Funções absorvidas pelo `setup.sh`.
 
 ### Descrição Técnica:

@@ -111,23 +111,18 @@ services:
   # Keycloak
   # ---------------------------------------------------------------------------
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.4
+    image: quay.io/keycloak/keycloak:26.0.0
     container_name: keycloak
-    # --import-realm: importa arquivos JSON em /opt/keycloak/data/import/ no primeiro boot.
-    # --http-relative-path: força o Keycloak a escutar em /keycloak/ (essencial para o proxy)
+    # --http-relative-path: essencial para rodar sob /keycloak/ no nginx
     command: start-dev --import-realm --http-relative-path=/keycloak
     environment:
-      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
-      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
-      # Contexto HTTP do Keycloak: todos os endpoints ficam sob /keycloak/.
       - KC_HTTP_RELATIVE_PATH=/keycloak
-      # URL base do servidor (incluindo o path para forçar o contexto nos redirects).
       - KC_HOSTNAME_URL=${KC_HOSTNAME_URL:-https://agentk.local/keycloak}
       - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local/keycloak}
-      # Desativa a exigência de HTTPS para o hostname (permite debug via porta 8082)
       - KC_HOSTNAME_STRICT_HTTPS=false
-      # v24+: substituto de KC_PROXY=edge
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
