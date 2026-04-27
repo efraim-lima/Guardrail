@@ -118,13 +118,17 @@ services:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
-      # Informa ao Keycloak sua URL pública (usada no campo 'iss' dos tokens JWT
-      # e nos redirects do browser). O caminho /keycloak/ corresponde ao location
-      # no nginx que roteia para este container sem passar pelo oauth2-proxy.
+      # Contexto HTTP do Keycloak: todos os endpoints ficam sob /keycloak/.
+      # Deve ser consistente com o location /keycloak/ do nginx (que preserva o path)
+      # e com as URLs internas usadas pelo oauth2-proxy (http://keycloak:8080/keycloak/...).
+      - KC_HTTP_RELATIVE_PATH=/keycloak
+      # URL pública base — usada no campo 'iss' dos JWTs e nos redirects do browser.
       - KC_HOSTNAME_URL=https://agentk.local/keycloak
       - KC_HOSTNAME_ADMIN_URL=https://agentk.local/keycloak
-      # edge = Keycloak confia nos headers X-Forwarded-* do nginx
-      - KC_PROXY=edge
+      # KC_PROXY=edge foi deprecado no Keycloak 24; substituto correto:
+      - KC_PROXY_HEADERS=xforwarded
+      # Necessário quando o proxy termina TLS e envia HTTP ao Keycloak.
+      - KC_HTTP_ENABLED=true
       # false = aceita requisições de outros hostnames (localhost:8082 para debug)
       - KC_HOSTNAME_STRICT=false
     ports:
@@ -161,8 +165,8 @@ services:
       # A login-url usa a URL pública para que o BROWSER do usuário consiga alcançá-la.
       - --skip-oidc-discovery=true
       - --login-url=https://agentk.local/keycloak/realms/agentk/protocol/openid-connect/auth
-      - --redeem-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/token
-      - --oidc-jwks-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/certs
+      - --redeem-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/token
+      - --oidc-jwks-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/certs
       # URL de callback após login — deve ser registrada no cliente Keycloak.
       - --redirect-url=https://agentk.local/oauth2/callback
       - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
@@ -172,7 +176,7 @@ services:
       - --skip-provider-button=true
       - --oidc-extra-audience=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
       - --whitelist-domain=agentk.local
-      - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
+      - --backend-logout-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/logout
     ports:
       # Restrito a loopback: oauth2-proxy não usa TLS próprio, logo não deve ser
       # exposto externamente. O nginx é o único ponto de entrada HTTPS autorizado.
@@ -182,6 +186,13 @@ services:
     depends_on:
       - keycloak
       - agentk-client
+    healthcheck:
+      # /ping é o endpoint de liveness nativo do oauth2-proxy (retorna 200 OK).
+      test: ["CMD", "wget", "-qO", "-", "http://localhost:4180/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -214,7 +225,13 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - agentk-client
+      # nginx só sobe quando o oauth2-proxy estiver healthy.
+      # Sem isso, nginx inicia sem upstream disponível e o comportamento
+      # de proxy fica indefinido — podendo causar bypass acidental da autenticação.
+      oauth2-proxy:
+        condition: service_healthy
+      agentk-client:
+        condition: service_started
     restart: unless-stopped
 
 # =============================================================================

@@ -1,5 +1,51 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Acesso ao Keycloak via nginx (KC_HTTP_RELATIVE_PATH)
+
+### Arquivos Modificados
+
+- **`nginx/nginx.conf`** — Removida a `/` final do `proxy_pass` no `location /keycloak/`.
+- **`docker-compose.yaml`** — Adicionado `KC_HTTP_RELATIVE_PATH=/keycloak`; substituído `KC_PROXY=edge` (deprecado) por `KC_PROXY_HEADERS=xforwarded` + `KC_HTTP_ENABLED=true`; URLs internas do `oauth2-proxy` atualizadas com o prefixo `/keycloak/`.
+
+### Descrição
+
+O Keycloak ficava inacessível via `https://agentk.local/keycloak/` por três problemas combinados que resultavam em 404 ou redirect loop.
+
+### Causa-Raiz
+
+1. **`proxy_pass http://keycloak:8080/` com `/` final**: O nginx removia o prefixo `/keycloak/` antes de repassar a requisição. A requisição `/keycloak/admin/` chegava ao container como `/admin/`. Sem `KC_HTTP_RELATIVE_PATH` configurado, o Keycloak não tinha endpoints registrados sob `/keycloak/` e retornava 404 para a maioria dos recursos. Recursos estáticos gerados pelo Keycloak ainda referenciavam caminhos raiz, quebrando a navegação.
+2. **`KC_HTTP_RELATIVE_PATH` ausente**: O Keycloak precisa desta variável para registrar todos os seus servlets e gerar links internos (CSS, JS, redirects OIDC) usando o prefixo `/keycloak/`. Sem ela, o contexto HTTP do Keycloak ficava na raiz `/`, incompatível com o roteamento do nginx.
+3. **`KC_PROXY=edge` deprecado no Keycloak 24**: Este modo foi removido/depreciado na versão 24. A configuração equivalente e suportada é `KC_PROXY_HEADERS=xforwarded` (confia nos headers `X-Forwarded-*`) + `KC_HTTP_ENABLED=true` (permite receber HTTP do nginx, uma vez que TLS é terminado pelo nginx). A ausência desta configuração correta impedia que o Keycloak construísse URLs com `https://` a partir das requisições HTTP internas do nginx.
+
+### Solução Aplicada
+
+- **`nginx/nginx.conf`**: Removida a `/` final do `proxy_pass` em `location /keycloak/`. Sem a barra final, o nginx preserva o path completo — `/keycloak/admin/` chega ao container como `/keycloak/admin/`, consistente com `KC_HTTP_RELATIVE_PATH=/keycloak`.
+- **`docker-compose.yaml` (Keycloak)**: Adicionado `KC_HTTP_RELATIVE_PATH=/keycloak`; `KC_PROXY=edge` substituído por `KC_PROXY_HEADERS=xforwarded` + `KC_HTTP_ENABLED=true`.
+- **`docker-compose.yaml` (oauth2-proxy)**: URLs internas `--redeem-url`, `--oidc-jwks-url` e `--backend-logout-url` atualizadas para incluir o prefixo `/keycloak/`, pois agora o Keycloak escuta sob esse caminho internamente também.
+
+---
+
+## 26 de Abril de 2026 - Correção de Dependência nginx → oauth2-proxy e Healthcheck
+
+### Arquivos Modificados
+
+- **`docker-compose.yaml`** — Adicionado `healthcheck` ao serviço `oauth2-proxy` (endpoint `/ping`); serviço `nginx` atualizado para depender de `oauth2-proxy` com condição `service_healthy`.
+
+### Descrição
+
+O nginx iniciava sem garantia de que o oauth2-proxy estava operacional, tornando o comportamento do proxy indefinido durante o boot. Sem um healthcheck, o Docker Compose não tinha como saber se o oauth2-proxy estava pronto para receber conexões antes de direcionar tráfego a ele via nginx.
+
+### Causa-Raiz
+
+A ausência de `depends_on` entre `nginx` e `oauth2-proxy` permitia que o nginx subisse antes do upstream de autenticação estar disponível. Container antigos com porta `8502` exposta do `agentk-client` também permaneciam ativos após o `up -d` sem `--force-recreate`, mantendo o bypass de autenticação.
+
+### Solução Aplicada
+
+- **Healthcheck no oauth2-proxy**: usa o endpoint nativo `/ping` do oauth2-proxy (retorna `200 OK` quando o processo está pronto para receber conexões).
+- **`nginx` depende de `oauth2-proxy: service_healthy`**: garante que o nginx só inicia após o oauth2-proxy estar respondendo, eliminando a janela de tempo em que o upstream de autenticação estaria ausente.
+
+---
+
 ## 26 de Abril de 2026 - Correção de Bypass de Autenticação (CWE-284: Broken Access Control)
 
 ### Arquivos Modificados
