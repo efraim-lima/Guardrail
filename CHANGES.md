@@ -1,15 +1,15 @@
 # Registro de Alterações (Changelog)
 
-## [2026-04-27] - Consolidação da Camada de Orquestração e Segurança Dinâmica
+## [2026-04-27] - Transição para Domínio Local e Resolução Automática (mDNS)
 
 ### Arquivos Modificados:
-- `setup.sh`: Transformado no orquestrador principal (Regente) do ecossistema Guardrail. Antecipada a inicialização do Nginx para a Fase 2 e ajustadas URLs do Keycloak.
-- `nginx/nginx.conf`: Atualizado para refletir o novo fluxo de configuração e reforçar instruções de segurança.
-- `docker-compose.yaml`: Atualizado Keycloak para v26.0.0. Adotadas as variáveis `KC_BOOTSTRAP_ADMIN_USERNAME` e `KC_BOOTSTRAP_ADMIN_PASSWORD`. Mantido `--http-relative-path=/keycloak` para compatibilidade com o proxy.
-- `start.sh`: [REMOVIDO] Funções absorvidas pelo `setup.sh`.
+- `setup.sh`: Transformado no orquestrador principal (Regente). Implementada detecção dinâmica de IP, geração de certificados SSL com SAN e suporte a mDNS via `agentk.local`. Adicionada verificação de integridade para o serviço `avahi-daemon`.
+- `nginx/nginx.conf`: Atualizado para servir como proxy reverso HTTPS unificado para a aplicação e Keycloak sob o domínio `agentk.local`.
+- `docker-compose.yaml`: Atualizado Keycloak para v26.0.0. Adotadas as variáveis `KC_BOOTSTRAP_ADMIN_USERNAME` e `KC_BOOTSTRAP_ADMIN_PASSWORD`. Configurado para operar com caminhos relativos (`/keycloak`) de forma nativa.
+- `realm-agentk.json`: Atualizado com wildcards (`*`) nos URIs de redirecionamento para suportar acesso via IP dinâmico e domínios locais variados.
 
 ### Descrição Técnica:
-Implementação de uma arquitetura de orquestração unificada no arquivo `setup.sh`, integrando a detecção dinâmica de infraestrutura de rede (IP) com o ciclo de vida dos containers Docker Compose. A modificação introduziu um sistema de implantação em quatro fases (Infraestrutura, Identidade, Configuração Interativa e Segurança), garantindo que dependências críticas como o `OAUTH2_PROXY_CLIENT_SECRET` sejam validadas e coletadas de forma síncrona antes da ativação do Proxy Reverso (Nginx).
+A arquitetura de rede foi migrada de um modelo baseado em IP estático para um sistema de resolução de nomes local baseado em mDNS (Multicast DNS). A adoção do domínio `https://agentk.local` como ponto único de entrada elimina a necessidade de manutenção manual do arquivo `hosts` em ambientes que suportam Avahi/Bonjour. No back-end, o Keycloak v26 foi integrado com reforço de caminho relativo via CLI (`--http-relative-path`), resolvendo falhas de redirecionamento que ocorriam em versões anteriores durante a terminação TLS no proxy Nginx.
 
 ### Justificativa:
 A fragmentação da lógica de inicialização entre `setup.sh` e `start.sh` gerava inconsistências na detecção de IPs dinâmicos e na validade dos certificados SSL. Ao centralizar a lógica, assegura-se que:

@@ -51,6 +51,19 @@ log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error()   { echo -e "${RED}[ERRO]${NC} $1"; }
+
+check_avahi() {
+    if ! command -v avahi-daemon >/dev/null 2>&1; then
+        log_warn "O serviço 'avahi-daemon' não foi detectado."
+        log_warn "Para que o domínio 'agentk.local' funcione automaticamente com IP dinâmico,"
+        log_warn "instale-o na VM: sudo apt update && sudo apt install avahi-daemon -y"
+    else
+        if ! systemctl is-active --quiet avahi-daemon; then
+            log_warn "O serviço 'avahi-daemon' está instalado mas não está rodando."
+            log_warn "Inicie-o com: sudo systemctl start avahi-daemon"
+        fi
+    fi
+}
 log_step() {
     echo ""
     echo -e "${BOLD}${CYAN}=================================================${NC}"
@@ -380,6 +393,7 @@ main() {
     fi
 
     ensure_env
+    check_avahi
     sync_env_ip
 
     # Criar diretorio para certificados
