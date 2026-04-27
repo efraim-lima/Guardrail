@@ -63,6 +63,13 @@ task fatJar(type: Jar) {
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
+    // Exclui arquivos de assinatura de JARs assinados (ex: BouncyCastle).
+    // Sem isso, o JVM lança SecurityException ao iniciar o fat JAR,
+    // pois as assinaturas ficam inválidas após a mesclagem das classes.
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.RSA'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/SIG-*'
     with jar
 }
 

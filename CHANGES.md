@@ -1,5 +1,25 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de `SecurityException` no Fat JAR (assinaturas BouncyCastle)
+
+### Arquivos Modificados
+
+- **`build.gradle`** — Adicionadas cláusulas `exclude` para arquivos `META-INF/*.SF`, `META-INF/*.RSA`, `META-INF/*.DSA` e `META-INF/SIG-*` na task `fatJar`.
+
+### Descrição
+
+O gateway falhava na inicialização com `java.lang.SecurityException: Invalid signature file digest for Manifest main attributes` imediatamente após o entrypoint do Docker configurar o ambiente com sucesso.
+
+### Causa-Raiz
+
+O BouncyCastle distribui seus JARs com assinatura criptográfica (arquivos `META-INF/BC*.SF` e `BC*.DSA`) para garantir a integridade da biblioteca. A task `fatJar` descompactava todas as dependências e as re-empacotava em um único JAR, incluindo esses arquivos de assinatura. O ProGuard então processava o fat JAR renomeando e reorganizando classes, invalidando os hashes registrados nas assinaturas. O JVM detectava a divergência no carregamento e lançava `SecurityException` antes mesmo de executar `main()`.
+
+### Solução Aplicada
+
+Adicionadas cláusulas `exclude` na task `fatJar` do `build.gradle` para remover todos os arquivos de assinatura (`*.SF`, `*.RSA`, `*.DSA`, `SIG-*`) durante a criação do fat JAR, antes da etapa de ofuscação pelo ProGuard.
+
+---
+
 ## 26 de Abril de 2026 - Correção de Falha Crítica de Inicialização do `agentk-gateway` (iptables / NET_ADMIN)
 
 ### Arquivos Modificados
