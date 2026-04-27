@@ -107,10 +107,12 @@ sync_env_ip() {
 
     # Grava o IP detectado no .env
     upsert_env "AGENTK_HOST_IP" "$detected_ip"
+    upsert_env "KC_HOSTNAME_URL" "https://${detected_ip}/keycloak"
     upsert_env "KC_HOSTNAME_ADMIN_URL" "https://${detected_ip}/keycloak"
 
     log_info "IP detectado automaticamente: ${detected_ip}"
     log_success "AGENTK_HOST_IP=${detected_ip} gravado em ${ENV_FILE}"
+    log_success "KC_HOSTNAME_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
     log_success "KC_HOSTNAME_ADMIN_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
 
     # Se o IP mudou e o certificado ja existe, remove para forcar regeracao
@@ -335,8 +337,8 @@ print_summary() {
     echo -e "${GREEN}+-------------------------------------------------------------+${NC}"
     echo ""
     echo -e " ${BOLD}Acesso principal (requer autenticacao Keycloak):${NC}"
-    echo -e "   Aplicacao AgentK : ${BOLD}https://${AGENTK_HOST_IP:-agentk.local}/${NC}"
-    echo -e "   Keycloak Admin   : ${BOLD}https://${AGENTK_HOST_IP:-agentk.local}/keycloak/admin/${NC}"
+    echo -e "   Aplicacao AgentK : ${BOLD}https://${AGENTK_HOST_IP}/ ${NC}"
+    echo -e "   Keycloak Admin   : ${BOLD}https://${AGENTK_HOST_IP}/keycloak/admin/${NC}"
     echo ""
     echo -e " ${BOLD}Endpoints de debug (localhost apenas):${NC}"
     echo -e "   Keycloak direto  : ${BOLD}http://localhost:8082/keycloak/${NC}"

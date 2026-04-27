@@ -125,9 +125,8 @@ services:
       # e com as URLs internas usadas pelo oauth2-proxy (http://keycloak:8080/keycloak/...).
       - KC_HTTP_RELATIVE_PATH=/keycloak
       # URL da interface de administracao.
-      # Usa AGENTK_HOST_IP se definido, caso contrario cai para agentk.local.
-      # Isso permite acessar o admin via IP quando agentk.local nao esta no /etc/hosts.
-      - KC_HOSTNAME_URL=https://agentk.local/keycloak
+      # Usa AGENTK_HOST_IP detectado pelo setup.sh para permitir acesso externo.
+      - KC_HOSTNAME_URL=${KC_HOSTNAME_URL:-https://agentk.local/keycloak}
       - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local/keycloak}
       # KC_PROXY=edge foi deprecado no Keycloak 24; substituto correto:
       - KC_PROXY_HEADERS=xforwarded
