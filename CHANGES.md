@@ -1,5 +1,65 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - nginx independente do oauth2-proxy + profile 'secure'
+
+### Arquivos Modificados
+
+- **`docker-compose.yaml`** — Adicionado `profiles: [secure]` ao `oauth2-proxy`; removida dependência do `nginx` no `oauth2-proxy`.
+- **`nginx/nginx.conf`** — Adicionada página de erro customizada `@auth_unavailable` (503) exibida quando o `oauth2-proxy` não está ativo, com link direto para `/keycloak/admin/`.
+
+### Causa-Raiz
+
+Dois problemas combinados impediam o acesso ao painel admin do Keycloak:
+
+1. **nginx não subia porque dependia do oauth2-proxy**: Com `depends_on oauth2-proxy: service_started`, o nginx aguardava o oauth2-proxy iniciar. Como o oauth2-proxy tem `profiles: [secure]` (adicionado nesta entrega), ele não subia no `docker compose up` padrão — logo, o nginx também não subia, bloqueando `/keycloak/admin/`.
+2. **`docker compose up` subia o oauth2-proxy antes do setup interativo**: Sem o `profiles: [secure]`, qualquer `docker compose up` iniciava o oauth2-proxy imediatamente, antes que o `start.sh` tivesse a chance de coletar o Client Secret. O oauth2-proxy falhava ao tentar validar o JWKS com secret incorreto.
+
+### Solução Aplicada
+
+- **`profiles: [secure]`** no oauth2-proxy: exclui o serviço do `docker compose up` padrão. Só é iniciado quando explicitamente solicitado (`docker compose up -d oauth2-proxy`) ou via `start.sh` fase 4. O Docker Compose permite iniciar serviços com profile por nome explícito, então `start.sh` continua funcionando sem alteração.
+- **nginx sem `depends_on oauth2-proxy`**: nginx sobe sempre, independentemente do oauth2-proxy. O resultado é:
+  - `/keycloak/` → keycloak direto (**sempre acessível**)
+  - `/` → oauth2-proxy → se down, nginx retorna página 503 customizada
+- **Página `@auth_unavailable`**: exibida no `location /` quando oauth2-proxy retorna 502/503/504. Informa o usuário que o setup está pendente, mostra o link para `/keycloak/admin/` e auto-atualiza a cada 10s.
+
+---
+
+## 26 de Abril de 2026 - Startup em 4 Fases com Pausa Interativa (`start.sh`)
+
+### Arquivos Modificados
+
+- **`start.sh`** — Reescrito com orquestração em 4 fases e pausa interativa entre as fases 3 e 4.
+- **`env.example`** — Atualizado com todas as variáveis necessárias para a stack completa.
+
+### Descrição
+
+O Docker Compose é declarativo e não suporta pausas interativas entre serviços. Para garantir que a camada de autenticação só seja ativada após o Keycloak estar configurável e com ao menos um usuário criado, o `start.sh` foi reescrito para encapsular o compose em fases sequenciais.
+
+### Fluxo de Startup
+
+```
+FASE 1: docker compose up -d agentk-gateway agentk-server agentk-client ollama
+   |
+FASE 2: docker compose up -d keycloak
+        wait_for_healthy(keycloak)
+   |
+FASE 3: [PAUSA INTERATIVA]
+        - Mostra URL: http://localhost:8082/keycloak/admin/
+        - Instrui o usuario a: criar usuario no realm 'agentk'
+        - Solicita o Client Secret (ENTER = usa padrao 'oauth2-proxy-secret')
+        - Grava OAUTH2_PROXY_CLIENT_SECRET no .env
+        - Aguarda ENTER para continuar
+   |
+FASE 4: docker compose up -d oauth2-proxy nginx
+        (a partir daqui, TODO acesso exige login Keycloak)
+```
+
+### Por que nao usar Docker Compose puro
+
+O Docker Compose não oferece mecanismo nativo para pausar a execução e aguardar input do usuário. `healthcheck` + `depends_on` garantem ordem de inicialização entre containers, mas não permitem interação humana intermediária. O `start.sh` é a camada correta para esta lógica.
+
+---
+
 ## 26 de Abril de 2026 - Correção de Startup do oauth2-proxy: Realm Auto-Provisionado e Healthcheck do Keycloak
 
 ### Arquivos Modificados

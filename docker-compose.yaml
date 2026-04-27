@@ -160,6 +160,13 @@ services:
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
     container_name: oauth2-proxy
+    # profile 'secure': este serviço NÃO é iniciado por 'docker compose up' padrão.
+    # Só é iniciado quando:
+    #   - Explicitamente: docker compose up -d oauth2-proxy
+    #   - Via start.sh (fase 4), que chama o comando acima após a configuração interativa.
+    # Isso evita que o oauth2-proxy tente validar o JWKS antes do realm estar configurado.
+    profiles:
+      - secure
     command:
       - --http-address=0.0.0.0:4180
       - --upstream=http://agentk-client:8501
@@ -240,11 +247,9 @@ services:
     networks:
       - agentk-network
     depends_on:
-      # oauth2-proxy não tem healthcheck (imagem distroless), então usa service_started.
-      # O nginx retornará 502 temporariamente se oauth2-proxy ainda não tiver iniciado,
-      # mas se recupera automaticamente assim que o upstream estiver disponível.
-      oauth2-proxy:
-        condition: service_started
+      # nginx inicia independentemente do oauth2-proxy.
+      # Quando oauth2-proxy nao esta ativo, nginx retorna a pagina de erro customizada
+      # (definida no nginx.conf) para '/', mas '/keycloak/' continua acessivel diretamente.
       agentk-client:
         condition: service_started
     restart: unless-stopped
