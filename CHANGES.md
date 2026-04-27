@@ -1,5 +1,23 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-27] - Consolidação da Camada de Orquestração e Segurança Dinâmica
+
+### Arquivos Modificados:
+- `setup.sh`: Transformado no orquestrador principal (Regente) do ecossistema Guardrail.
+- `nginx/nginx.conf`: Atualizado para refletir o novo fluxo de configuração e reforçar instruções de segurança.
+- `start.sh`: [REMOVIDO] Funções absorvidas pelo `setup.sh`.
+
+### Descrição Técnica:
+Implementação de uma arquitetura de orquestração unificada no arquivo `setup.sh`, integrando a detecção dinâmica de infraestrutura de rede (IP) com o ciclo de vida dos containers Docker Compose. A modificação introduziu um sistema de implantação em quatro fases (Infraestrutura, Identidade, Configuração Interativa e Segurança), garantindo que dependências críticas como o `OAUTH2_PROXY_CLIENT_SECRET` sejam validadas e coletadas de forma síncrona antes da ativação do Proxy Reverso (Nginx).
+
+### Justificativa:
+A fragmentação da lógica de inicialização entre `setup.sh` e `start.sh` gerava inconsistências na detecção de IPs dinâmicos e na validade dos certificados SSL. Ao centralizar a lógica, assegura-se que:
+1. O certificado SSL sempre contenha o IP atual da máquina virtual nos campos SAN (Subject Alternative Names).
+2. O fluxo de provisionamento do Keycloak seja bloqueante, impedindo que o acesso à aplicação seja exposto sem a devida camada de autenticação OAuth2 configurada.
+3. A experiência do desenvolvedor seja simplificada para um único ponto de entrada (`bash setup.sh`).
+
+---
+
 ## 26 de Abril de 2026 - Detecção Automática de IP e Sincronização do `.env` no `setup.sh`
 
 ### Arquivos Modificados
