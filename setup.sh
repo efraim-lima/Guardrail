@@ -105,16 +105,16 @@ sync_env_ip() {
         previous_ip="$(grep -E '^AGENTK_HOST_IP=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
     fi
 
-    # Grava o IP detectado no .env
+    # Grava o IP detectado no .env (usado apenas internamente e para o certificado)
     upsert_env "AGENTK_HOST_IP" "$detected_ip"
-    # Reforçamos o path na URL para evitar que o Keycloak perca o contexto no redirect
-    upsert_env "KC_HOSTNAME_URL" "https://${detected_ip}/keycloak"
-    upsert_env "KC_HOSTNAME_ADMIN_URL" "https://${detected_ip}/keycloak"
+    
+    # Priorizamos agentk.local para todas as URLs publicas
+    upsert_env "KC_HOSTNAME_URL" "https://agentk.local/keycloak"
+    upsert_env "KC_HOSTNAME_ADMIN_URL" "https://agentk.local/keycloak"
 
     log_info "IP detectado automaticamente: ${detected_ip}"
     log_success "AGENTK_HOST_IP=${detected_ip} gravado em ${ENV_FILE}"
-    log_success "KC_HOSTNAME_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
-    log_success "KC_HOSTNAME_ADMIN_URL=https://${detected_ip}/keycloak gravado em ${ENV_FILE}"
+    log_success "Configuracao DNS: agentk.local sera usado como base."
 
     # Se o IP mudou e o certificado ja existe, remove para forcar regeracao
     # (o cert antigo nao teria o novo IP nos SANs)
@@ -339,11 +339,18 @@ print_summary() {
     echo -e "${GREEN}+-------------------------------------------------------------+${NC}"
     echo ""
     echo -e " ${BOLD}Acesso principal (requer autenticacao Keycloak):${NC}"
-    echo -e "   Aplicacao AgentK : ${BOLD}https://${AGENTK_HOST_IP}/ ${NC}"
-    echo -e "   Keycloak Admin   : ${BOLD}https://${AGENTK_HOST_IP}/keycloak/admin/${NC}"
+    echo -e "   Aplicacao AgentK : ${BOLD}https://agentk.local/${NC}"
+    echo -e "   Keycloak Admin   : ${BOLD}https://agentk.local/keycloak/admin/${NC}"
     echo ""
-    echo -e " ${YELLOW}NOTA:${NC} Se estiver acessando de fora da VM, certifique-se que o IP ${BOLD}${AGENTK_HOST_IP}${NC}"
-    echo -e " e alcancavel e que o seu navegador aceite o certificado auto-assinado."
+    echo -e " ${YELLOW}+-------------------------------------------------------------+${NC}"
+    echo -e " ${YELLOW}|         CONFIGURACAO DO ARQUIVO HOSTS (NA SUA MAQUINA)      |${NC}"
+    echo -e " ${YELLOW}+-------------------------------------------------------------+${NC}"
+    echo -e " Para acessar via ${BOLD}agentk.local${NC}, adicione a linha abaixo no"
+    echo -e " arquivo ${BOLD}/etc/hosts${NC} (Linux/Mac) ou ${BOLD}hosts${NC} (Windows) do seu PC:"
+    echo ""
+    echo -e "   ${GREEN}${AGENTK_HOST_IP:-IP_DA_VM}  agentk.local${NC}"
+    echo ""
+    echo -e " ${YELLOW}+-------------------------------------------------------------+${NC}"
     echo ""
     echo -e " ${BOLD}Endpoints de debug (localhost apenas):${NC}"
     echo -e "   Keycloak direto  : ${BOLD}http://localhost:8082/keycloak/${NC}"
