@@ -5,6 +5,7 @@
 ### Arquivos Modificados:
 - `setup.sh`: Transformado no orquestrador principal (Regente) do ecossistema Guardrail.
 - `nginx/nginx.conf`: Atualizado para refletir o novo fluxo de configuração e reforçar instruções de segurança.
+- `docker-compose.yaml`: Habilitado `KC_HEALTH_ENABLED=true` e corrigido healthcheck do Keycloak para usar `/dev/tcp` (independente de `curl`).
 - `start.sh`: [REMOVIDO] Funções absorvidas pelo `setup.sh`.
 
 ### Descrição Técnica:
