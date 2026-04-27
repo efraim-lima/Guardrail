@@ -124,9 +124,11 @@ services:
       # Deve ser consistente com o location /keycloak/ do nginx (que preserva o path)
       # e com as URLs internas usadas pelo oauth2-proxy (http://keycloak:8080/keycloak/...).
       - KC_HTTP_RELATIVE_PATH=/keycloak
-      # URL pública base — usada no campo 'iss' dos JWTs e nos redirects do browser.
+      # URL da interface de administracao.
+      # Usa AGENTK_HOST_IP se definido, caso contrario cai para agentk.local.
+      # Isso permite acessar o admin via IP quando agentk.local nao esta no /etc/hosts.
       - KC_HOSTNAME_URL=https://agentk.local/keycloak
-      - KC_HOSTNAME_ADMIN_URL=https://agentk.local/keycloak
+      - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local/keycloak}
       # KC_PROXY=edge foi deprecado no Keycloak 24; substituto correto:
       - KC_PROXY_HEADERS=xforwarded
       # Necessário quando o proxy termina TLS e envia HTTP ao Keycloak.
@@ -134,8 +136,9 @@ services:
       # false = aceita requisições de outros hostnames (localhost:8082 para debug)
       - KC_HOSTNAME_STRICT=false
     ports:
-      # Mantido como fallback para debug/configuração inicial via CLI ou local.
-      # Acesso via nginx: https://agentk.local/keycloak/admin/
+      # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
+      # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
+      # Para acesso remoto (outra maquina): defina HOST_BIND_IP=0.0.0.0 no .env.
       - "${HOST_BIND_IP:-127.0.0.1}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data

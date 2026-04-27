@@ -1,5 +1,25 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Detecção Automática de IP e Sincronização do `.env` no `setup.sh`
+
+### Arquivos Modificados
+
+- **`setup.sh`** — Adicionadas funções `upsert_env` e `sync_env_ip`; removida variável `AGENTK_HOST_IP` do bloco estático de configuração; `resolve_agentk_host_ip` simplificada (sem fallback manual); `main()` invoca `sync_env_ip` como primeira etapa.
+
+### Descrição
+
+A cada execução do `setup.sh`, o IP atual da máquina é detectado automaticamente e gravado no `.env` sem intervenção manual. Isso resolve o problema de ambientes com IP dinâmico (DHCP, reinicialização de VM, troca de rede).
+
+### Comportamento
+
+1. **Detecção**: `ip route get 1.1.1.1` (primeiro) → `hostname -I` (fallback) → `127.0.0.1` (último recurso).
+2. **Gravação no `.env`** via `upsert_env` (cria o arquivo se não existir; atualiza se a chave já existir):
+   - `AGENTK_HOST_IP=<ip detectado>`
+   - `KC_HOSTNAME_ADMIN_URL=https://<ip detectado>/keycloak`
+3. **Invalidação automática do certificado**: se o IP mudou desde a última execução (comparado com `AGENTK_HOST_IP` anterior no `.env`), o certificado SSL é removido e regerado com o novo IP nos `subjectAltNames`. Sem isso, o browser rejeitaria o certificado por mismatch de IP.
+
+---
+
 ## 26 de Abril de 2026 - nginx independente do oauth2-proxy + profile 'secure'
 
 ### Arquivos Modificados
