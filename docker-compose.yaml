@@ -140,7 +140,7 @@ services:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
       # Para acesso remoto (outra maquina): defina HOST_BIND_IP=0.0.0.0 no .env.
-      - "${HOST_BIND_IP:-127.0.0.1}:8082:8080"
+      - "${HOST_BIND_IP:-0.0.0.0}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
       # Realm importado automaticamente no primeiro boot via --import-realm.

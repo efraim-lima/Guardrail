@@ -233,9 +233,10 @@ phase1_infrastructure() {
 # ---------------------------------------------------------------------------
 phase2_keycloak() {
     log_step "FASE 2 -- Keycloak (Identity Provider)"
-    docker compose up -d keycloak
+    # Iniciamos nginx junto com keycloak para permitir acesso HTTPS imediato
+    docker compose up -d keycloak nginx
     wait_for_healthy "keycloak" 180
-    log_success "Realm 'agentk' e client 'oauth2-proxy' importados automaticamente."
+    log_success "Keycloak e Nginx prontos para configuracao."
 }
 
 # ---------------------------------------------------------------------------
@@ -320,10 +321,10 @@ phase3_interactive_setup() {
 # FASE 4: Camada de autenticacao -- oauth2-proxy + nginx
 # ---------------------------------------------------------------------------
 phase4_auth_layer() {
-    log_step "FASE 4 -- Camada de Autenticacao (oauth2-proxy + nginx)"
-    log_info "Iniciando oauth2-proxy e nginx..."
-    docker compose up -d oauth2-proxy nginx
-    log_success "Nginx e oauth2-proxy ativos."
+    log_step "FASE 4 -- Camada de Autenticacao (oauth2-proxy)"
+    log_info "Iniciando oauth2-proxy..."
+    docker compose up -d oauth2-proxy
+    log_success "oauth2-proxy ativo."
     log_warn "TODO acesso a aplicacao agora exige autenticacao via Keycloak."
 }
 
