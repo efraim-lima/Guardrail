@@ -117,8 +117,19 @@ services:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
+      # Informa ao Keycloak sua URL pública (usada no campo 'iss' dos tokens JWT
+      # e nos redirects do browser). O caminho /keycloak/ corresponde ao location
+      # no nginx que roteia para este container sem passar pelo oauth2-proxy.
+      - KC_HOSTNAME_URL=https://agentk.local/keycloak
+      - KC_HOSTNAME_ADMIN_URL=https://agentk.local/keycloak
+      # edge = Keycloak confia nos headers X-Forwarded-* do nginx
+      - KC_PROXY=edge
+      # false = aceita requisições de outros hostnames (localhost:8082 para debug)
+      - KC_HOSTNAME_STRICT=false
     ports:
-      - "${HOST_BIND_IP:-0.0.0.0}:8082:8080"
+      # Mantido como fallback para debug/configuração inicial via CLI ou local.
+      # Acesso via nginx: https://agentk.local/keycloak/admin/
+      - "${HOST_BIND_IP:-127.0.0.1}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
     networks:
@@ -134,17 +145,32 @@ services:
     command:
       - --http-address=0.0.0.0:4180
       - --upstream=http://agentk-client:8501
-      - --provider=keycloak-oidc
+      # Provider genérico OIDC — permite skip de discovery e controle total das URLs.
+      # Necessário porque a URL de discovery pública (https://agentk.local/keycloak/...)
+      # não é resolvível pelo container oauth2-proxy sem passar pelo nginx internamente.
+      - --provider=oidc
       - --client-id=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
       - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:-SEU_CLIENT_SECRET}
+      # Issuer: deve bater exatamente com o campo 'iss' dos JWTs emitidos pelo Keycloak.
+      # O Keycloak usa KC_HOSTNAME_URL como base, resultando neste valor.
+      - --oidc-issuer-url=https://agentk.local/keycloak/realms/agentk
+      # Skip discovery: as URLs abaixo substituem o .well-known/openid-configuration.
+      # As URLs internas (http://keycloak:8080/...) são usadas para comunicação
+      # container-to-container (token exchange, JWKS) — sem passar pelo nginx.
+      # A login-url usa a URL pública para que o BROWSER do usuário consiga alcançá-la.
+      - --skip-oidc-discovery=true
+      - --login-url=https://agentk.local/keycloak/realms/agentk/protocol/openid-connect/auth
       - --redeem-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/token
-      - --oidc-issuer-url=http://keycloak:8080/realms/agentk
+      - --oidc-jwks-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/certs
+      # URL de callback após login — deve ser registrada no cliente Keycloak.
+      - --redirect-url=https://agentk.local/oauth2/callback
       - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
-      - --cookie-secure=false
+      # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
+      - --cookie-secure=true
       - --email-domain=*
       - --skip-provider-button=true
       - --oidc-extra-audience=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
-      - --whitelist-domain=keycloak
+      - --whitelist-domain=agentk.local
       - --backend-logout-url=http://keycloak:8080/realms/agentk/protocol/openid-connect/logout
     ports:
       - "${HOST_BIND_IP:-0.0.0.0}:4180:4180"

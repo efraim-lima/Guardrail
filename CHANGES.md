@@ -1,5 +1,47 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção do Fluxo de Autenticação: nginx → oauth2-proxy → Keycloak
+
+### Arquivos Modificados
+
+- **`nginx/nginx.conf`** — Adicionado `location /keycloak/` roteando diretamente ao container Keycloak; `location /` alterado de `agentk-client:8501` para `oauth2-proxy:4180`.
+- **`docker-compose.yaml`** — Configuradas variáveis `KC_HOSTNAME_URL`, `KC_HOSTNAME_ADMIN_URL`, `KC_PROXY` e `KC_HOSTNAME_STRICT` no serviço Keycloak. Serviço `oauth2-proxy` reconfigurado com `--provider=oidc`, `--skip-oidc-discovery=true` e separação entre URLs públicas (browser) e internas (container-to-container).
+
+### Descrição
+
+O redirecionamento para a tela de login do Keycloak não ocorria porque o nginx estava roteando todas as requisições diretamente para o `agentk-client:8501`, ignorando completamente o `oauth2-proxy`. Adicionalmente, o `oauth2-proxy` estava configurado com a URL interna do Keycloak (`http://keycloak:8080/...`) como `--oidc-issuer-url`, o que faria com que o browser do usuário recebesse redirects para um hostname Docker inacessível externamente.
+
+### Causa-Raiz (dois problemas combinados)
+
+1. **nginx não consultava o oauth2-proxy**: O `location /` apontava para `agentk-client:8501`. Todo o stack de autenticação (oauth2-proxy + Keycloak) existia no compose, mas nunca era invocado no caminho de uma requisição normal do browser.
+2. **Hostname circular no OIDC flow**: O `--oidc-issuer-url=http://keycloak:8080/realms/agentk` fazia com que o campo `issuer` dos tokens JWT e os `authorization_endpoint` retornados pelo Keycloak contivessem URLs acessíveis apenas dentro da rede Docker. O browser do usuário não consegue resolver `keycloak:8080`.
+
+### Solução Aplicada
+
+**Fluxo corrigido:**
+```
+Browser → Nginx:443 → oauth2-proxy:4180 → agentk-client:8501   (app autenticada)
+Browser → Nginx:443/keycloak/ → keycloak:8080                   (admin + OIDC login)
+oauth2-proxy ↔ keycloak:8080 (direto, container-to-container para token exchange e JWKS)
+```
+
+**nginx/nginx.conf:** Adicionado `location /keycloak/` com `proxy_pass http://keycloak:8080/` antes do `location /`. O bloco `/keycloak/` não passa pelo oauth2-proxy, resolvendo o problema do "chicken-and-egg" (é necessário acessar o Keycloak para configurá-lo antes que qualquer autenticação exista). O `location /` passou a apontar para `oauth2-proxy:4180`.
+
+**docker-compose.yaml (Keycloak):** Adicionadas `KC_HOSTNAME_URL=https://agentk.local/keycloak` e `KC_HOSTNAME_ADMIN_URL` para que o Keycloak emita tokens JWT com o campo `iss` contendo a URL pública correta. `KC_PROXY=edge` instrui o Keycloak a confiar nos headers `X-Forwarded-*` enviados pelo nginx. A porta `8082` foi mantida apenas em `127.0.0.1` como fallback de debug local.
+
+**docker-compose.yaml (oauth2-proxy):** Migrado de `--provider=keycloak-oidc` para `--provider=oidc` com `--skip-oidc-discovery=true`, possibilitando o controle explícito de cada URL. A `--login-url` usa a URL pública (`https://agentk.local/keycloak/...`) para que o browser consiga alcançar a tela de login. As `--redeem-url` e `--oidc-jwks-url` usam o hostname interno Docker (`http://keycloak:8080/...`) para a troca de token e validação de assinatura, sem trânsito desnecessário pelo nginx.
+
+### Procedimento de configuração do Keycloak após o deploy
+
+1. Acessar `https://agentk.local/keycloak/admin/` com as credenciais `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`.
+2. Criar o realm **`agentk`**.
+3. Dentro do realm, criar o client **`oauth2-proxy`** (tipo `confidential`, `Standard Flow Enabled`).
+4. Adicionar o **Valid Redirect URI**: `https://agentk.local/oauth2/callback`.
+5. Copiar o **Client Secret** e definir a variável `OAUTH2_PROXY_CLIENT_SECRET` no `.env`.
+6. Reiniciar o serviço: `docker compose restart oauth2-proxy`.
+
+---
+
 ## 26 de Abril de 2026 - Correção de `SecurityException` no Fat JAR (assinaturas BouncyCastle)
 
 ### Arquivos Modificados
