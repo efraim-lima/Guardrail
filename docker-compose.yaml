@@ -114,27 +114,23 @@ services:
     image: quay.io/keycloak/keycloak:24.0.4
     container_name: keycloak
     # --import-realm: importa arquivos JSON em /opt/keycloak/data/import/ no primeiro boot.
-    # Provisiona automaticamente o realm 'agentk' e o client 'oauth2-proxy'.
-    command: start-dev --import-realm
+    # --http-relative-path: força o Keycloak a escutar em /keycloak/ (essencial para o proxy)
+    command: start-dev --import-realm --http-relative-path=/keycloak
     environment:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
       # Contexto HTTP do Keycloak: todos os endpoints ficam sob /keycloak/.
-      # Deve ser consistente com o location /keycloak/ do nginx (que preserva o path)
-      # e com as URLs internas usadas pelo oauth2-proxy (http://keycloak:8080/keycloak/...).
       - KC_HTTP_RELATIVE_PATH=/keycloak
       # URL base do servidor (sem o path /keycloak, que é herdado do KC_HTTP_RELATIVE_PATH).
-      # De acordo com a documentação oficial do Keycloak 24+, não deve incluir path.
       - KC_HOSTNAME_URL=${KC_HOSTNAME_URL:-https://agentk.local}
       - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local}
-      # KC_PROXY=edge foi deprecado no Keycloak 24; substituto correto:
+      # Desativa a exigência de HTTPS para o hostname (permite debug via porta 8082)
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      # v24+: substituto de KC_PROXY=edge
       - KC_PROXY_HEADERS=xforwarded
-      # Necessário quando o proxy termina TLS e envia HTTP ao Keycloak.
       - KC_HTTP_ENABLED=true
-      # Habilita os endpoints de health (/health/ready, /health/live)
       - KC_HEALTH_ENABLED=true
-      # false = aceita requisições de outros hostnames (localhost:8082 para debug)
       - KC_HOSTNAME_STRICT=false
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).

@@ -413,7 +413,7 @@ EOF
             -keyout "$KEY_FILE" \
             -out "$CERT_FILE" \
             -config "$san_cfg" \
-            -extensions v3_req 2>/dev/null
+            -extensions v3_req
 
         rm -f "$san_cfg"
         log_success "Certificado gerado com sucesso."
