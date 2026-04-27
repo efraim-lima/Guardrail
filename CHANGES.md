@@ -1,5 +1,35 @@
 # Registro de Alterações (Changelog)
 
+## 26 de Abril de 2026 - Correção de Startup do oauth2-proxy: Realm Auto-Provisionado e Healthcheck do Keycloak
+
+### Arquivos Modificados
+
+- **`config/keycloak/realm-agentk.json`** *(novo)* — Import do realm `agentk` com o client `oauth2-proxy` pré-configurado.
+- **`docker-compose.yaml`** — Adicionado `--import-realm` ao Keycloak; healthcheck ao Keycloak via `/keycloak/health/ready`; `oauth2-proxy` atualizado para aguardar `keycloak: service_healthy`; healthcheck do oauth2-proxy removido; nginx atualizado para `service_started`.
+
+### Descrição
+
+O `oauth2-proxy` falhava com "unhealthy" por três problemas encadeados que impediam o serviço de inicializar.
+
+### Causa-Raiz
+
+1. **`wget` inexistente na imagem distroless**: A imagem `quay.io/oauth2-proxy/oauth2-proxy:latest` é baseada em `gcr.io/distroless/static:nonroot`, que não contém shell, `wget`, `curl` ou qualquer utilitário. O healthcheck `CMD wget ...` falhava imediatamente, marcando o container como `unhealthy`.
+2. **Realm `agentk` não existia no Keycloak**: O `oauth2-proxy` tenta buscar o JWKS URL durante a inicialização. Como o realm não havia sido criado, recebia 404 e crashava.
+3. **`depends_on` sem `service_healthy`**: O `oauth2-proxy` iniciava antes do Keycloak estar pronto para processar requisições OIDC.
+
+### Solução Aplicada
+
+- **`config/keycloak/realm-agentk.json`**: Realm `agentk` e client `oauth2-proxy` provisionados automaticamente no primeiro boot via `--import-realm`. Secret padrão: `oauth2-proxy-secret`.
+- **Keycloak `healthcheck`**: Verifica `/keycloak/health/ready` com `curl`. Container só fica `healthy` após o Keycloak estar pronto e o realm importado.
+- **`oauth2-proxy depends_on keycloak: service_healthy`**: Garante order correta de inicialização.
+- **Healthcheck do oauth2-proxy removido**: Inviável em imagem distroless. Resiliência via `restart: on-failure`.
+
+### Credenciais Padrão
+
+Secret padrão: `oauth2-proxy-secret`. Para alterar em produção, edite `config/keycloak/realm-agentk.json` **antes** do primeiro `docker compose up` e defina `OAUTH2_PROXY_CLIENT_SECRET` no `.env`.
+
+---
+
 ## 26 de Abril de 2026 - Correção de Acesso ao Keycloak via nginx (KC_HTTP_RELATIVE_PATH)
 
 ### Arquivos Modificados

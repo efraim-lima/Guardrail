@@ -1,0 +1,36 @@
+{
+  "realm": "agentk",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "oauth2-proxy",
+      "name": "AgentK OAuth2 Proxy",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "oauth2-proxy-secret",
+      "redirectUris": [
+        "https://agentk.local/oauth2/callback"
+      ],
+      "webOrigins": [
+        "https://agentk.local"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "post.logout.redirect.uris": "https://agentk.local/*"
+      }
+    }
+  ]
+}

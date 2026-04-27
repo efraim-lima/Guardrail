@@ -113,7 +113,9 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.4
     container_name: keycloak
-    command: start-dev
+    # --import-realm: importa arquivos JSON em /opt/keycloak/data/import/ no primeiro boot.
+    # Provisiona automaticamente o realm 'agentk' e o client 'oauth2-proxy'.
+    command: start-dev --import-realm
     environment:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -137,8 +139,19 @@ services:
       - "${HOST_BIND_IP:-127.0.0.1}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
+      # Realm importado automaticamente no primeiro boot via --import-realm.
+      # Se o realm já existir no volume, o Keycloak ignora silenciosamente.
+      - ./config/keycloak:/opt/keycloak/data/import:ro
     networks:
       - agentk-network
+    healthcheck:
+      # /keycloak/health/ready retorna {"status":"UP"} quando o Keycloak está pronto.
+      # A imagem é baseada em Red Hat UBI, que inclui curl.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/keycloak/health/ready | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -155,7 +168,8 @@ services:
       # não é resolvível pelo container oauth2-proxy sem passar pelo nginx internamente.
       - --provider=oidc
       - --client-id=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
-      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:-SEU_CLIENT_SECRET}
+      # Secret padrão gerado pelo realm-agentk.json. Altere em produção via .env.
+      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:-oauth2-proxy-secret}
       # Issuer: deve bater exatamente com o campo 'iss' dos JWTs emitidos pelo Keycloak.
       # O Keycloak usa KC_HOSTNAME_URL como base, resultando neste valor.
       - --oidc-issuer-url=https://agentk.local/keycloak/realms/agentk
@@ -184,16 +198,17 @@ services:
     networks:
       - agentk-network
     depends_on:
-      - keycloak
-      - agentk-client
-    healthcheck:
-      # /ping é o endpoint de liveness nativo do oauth2-proxy (retorna 200 OK).
-      test: ["CMD", "wget", "-qO", "-", "http://localhost:4180/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    restart: unless-stopped
+      # Aguarda Keycloak estar HEALTHY (realm importado e pronto) antes de iniciar.
+      # Sem isso, oauth2-proxy tenta buscar o JWKS URL no startup, recebe 404
+      # (realm ainda não existe) e crasha imediatamente.
+      keycloak:
+        condition: service_healthy
+      agentk-client:
+        condition: service_started
+    # Sem healthcheck: a imagem quay.io/oauth2-proxy/oauth2-proxy usa base distroless
+    # (gcr.io/distroless/static), que não possui shell, wget, curl ou qualquer utilitário.
+    # A resiliência é garantida pelo depends_on acima e pelo restart: on-failure.
+    restart: on-failure
 
   # ---------------------------------------------------------------------------
   # Ollama — LLM Local
@@ -225,11 +240,11 @@ services:
     networks:
       - agentk-network
     depends_on:
-      # nginx só sobe quando o oauth2-proxy estiver healthy.
-      # Sem isso, nginx inicia sem upstream disponível e o comportamento
-      # de proxy fica indefinido — podendo causar bypass acidental da autenticação.
+      # oauth2-proxy não tem healthcheck (imagem distroless), então usa service_started.
+      # O nginx retornará 502 temporariamente se oauth2-proxy ainda não tiver iniciado,
+      # mas se recupera automaticamente assim que o upstream estiver disponível.
       oauth2-proxy:
-        condition: service_healthy
+        condition: service_started
       agentk-client:
         condition: service_started
     restart: unless-stopped
