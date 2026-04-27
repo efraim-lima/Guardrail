@@ -70,6 +70,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ~/.kube/config-embedded:/app/config:ro
+      - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
     healthcheck:
@@ -98,6 +99,8 @@ services:
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333/sse}
       - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
     depends_on:
@@ -262,9 +265,13 @@ networks:
 # Volumes
 # =============================================================================
 volumes:
-  # agentk-logs:
-  #   driver: local
   keycloak-data:
     driver: local
   ollama-data:
     driver: local
+  agentk-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/Agentk-Sugest/logs

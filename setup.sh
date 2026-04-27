@@ -401,6 +401,11 @@ main() {
         log_info "Criando diretório de certificados: $CERTS_DIR"
         mkdir -p "$CERTS_DIR"
     fi
+
+    # Criar diretorio para logs de auditoria e garantir permissao
+    log_info "Configurando diretorio de auditoria..."
+    mkdir -p "./Agentk-Sugest/logs"
+    chmod 777 "./Agentk-Sugest/logs"
     
     # Gerar certificado auto-assinado se nao existir ou se IP mudou
     if [[ ! -f "$CERT_FILE" || ! -f "$KEY_FILE" ]]; then
