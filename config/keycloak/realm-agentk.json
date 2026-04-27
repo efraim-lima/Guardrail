@@ -16,10 +16,10 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "oauth2-proxy-secret",
       "redirectUris": [
-        "https://agentk.local/oauth2/callback"
+        "*"
       ],
       "webOrigins": [
-        "https://agentk.local"
+        "*"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
@@ -29,7 +29,7 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "post.logout.redirect.uris": "https://agentk.local/*"
+        "post.logout.redirect.uris": "*"
       }
     }
   ]
