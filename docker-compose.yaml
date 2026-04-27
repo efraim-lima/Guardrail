@@ -122,9 +122,9 @@ services:
       - KC_DB=dev-file
       # Contexto HTTP do Keycloak: todos os endpoints ficam sob /keycloak/.
       - KC_HTTP_RELATIVE_PATH=/keycloak
-      # URL base do servidor (sem o path /keycloak, que é herdado do KC_HTTP_RELATIVE_PATH).
-      - KC_HOSTNAME_URL=${KC_HOSTNAME_URL:-https://agentk.local}
-      - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local}
+      # URL base do servidor (incluindo o path para forçar o contexto nos redirects).
+      - KC_HOSTNAME_URL=${KC_HOSTNAME_URL:-https://agentk.local/keycloak}
+      - KC_HOSTNAME_ADMIN_URL=${KC_HOSTNAME_ADMIN_URL:-https://agentk.local/keycloak}
       # Desativa a exigência de HTTPS para o hostname (permite debug via porta 8082)
       - KC_HOSTNAME_STRICT_HTTPS=false
       # v24+: substituto de KC_PROXY=edge
