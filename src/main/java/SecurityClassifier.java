@@ -99,7 +99,7 @@ public class SecurityClassifier {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
-        log("Consultando Ollama em " + targetUrl + " (model=" + model + ")");
+        AuditLogger.log("Gateway-System", "OLLAMA_QUERY", "api/generate", "REQUEST", "127.0.0.1", "model=" + model + ", url=" + targetUrl);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         
         if (response.statusCode() < 200 || response.statusCode() >= 300) {

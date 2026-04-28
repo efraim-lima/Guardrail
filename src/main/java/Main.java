@@ -14,7 +14,7 @@ public class Main {
     private volatile boolean running = true;
 
     public Main() {
-        log("Inicializando Gateway");
+        AuditLogger.log("Gateway-System", "STARTUP", "Application", "INITIALIZING", "127.0.0.1", "Versão 1.0.0");
     }
 
     // NOTA: O modo de interceptação TLS (TransparentTLSInterceptor + CertAuthority) ainda não está
@@ -54,6 +54,7 @@ public class Main {
         webhookThread.start();
 
         log("✓ Webhook iniciado na porta " + WEBHOOK_PORT);
+        AuditLogger.log("Gateway-System", "STARTUP", "WebhookServer", "SUCCESS", "0.0.0.0", "Port=" + WEBHOOK_PORT);
     }
 
     private void waitForShutdown() {
@@ -94,6 +95,7 @@ public class Main {
         }
 
         log("✓ Gateway encerrado");
+        AuditLogger.log("Gateway-System", "SHUTDOWN", "Application", "SUCCESS", "127.0.0.1", "Graceful shutdown completed");
     }
 
     private static void log(String message) {

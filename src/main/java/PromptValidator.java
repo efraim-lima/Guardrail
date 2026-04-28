@@ -137,12 +137,13 @@ public class PromptValidator implements Runnable {
                     return;
                 }
 
-                log("Prompt recebido:\n" + prompt);
+                String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp, "snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
 
                 String verdict = classifier.classify(prompt);
                 boolean allowed = "SAFE".equals(verdict);
 
-                log("Veredito da IA: " + verdict + " | allowed=" + allowed);
+                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", verdict, sourceIp, "allowed=" + allowed);
 
                 String response = "{"
                         + "\"prompt\":\"" + escapeJson(prompt) + "\","

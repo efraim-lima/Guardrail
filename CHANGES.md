@@ -7,6 +7,9 @@
 - `Agentk-Sugest/client/app/utils/logger.py` & `Agentk-Sugest/server/app/utils/logger.py`: Exposta a função `format_audit_log` para simplificar a importação nos módulos de aplicação.
 - `Agentk-Sugest/client/app/services/chat_service.py`: Atualizados todos os pontos de auditoria (Chamadas de Ferramentas, Respostas de LLM e Validações de Gateway) para o novo padrão rotulado. Implementada extração de IP de origem via headers de proxy (`X-Forwarded-For`).
 - `Agentk-Sugest/server/app/main.py`: Atualizadas as auditorias de operações críticas no Kubernetes (Apply e Delete) para seguir o novo padrão de segurança.
+- `Agentk-Sugest/scratch/verify_logs.py`: Ajustado para utilizar caminhos dinâmicos, garantindo portabilidade entre ambientes locais, Docker e máquinas virtuais.
+- `src/main/java/AuditLogger.java` (Novo): Implementado utilitário de auditoria para o Gateway Java, garantindo paridade de formato com os componentes Python.
+- `src/main/java/Main.java`, `src/main/java/PromptValidator.java` & `src/main/java/SecurityClassifier.java`: Migrados os logs de sistema e auditoria para o novo padrão rotulado com suporte a UTC e captura dinâmica de IP do cliente.
 
 ### Descrição Técnica:
 A infraestrutura de telemetria foi reconfigurada para atender a requisitos estritos de conformidade forense. O formato de log migrou de uma estrutura livre/separada por pipes para um modelo de pares chave-valor rotulados (`Timestamp`, `Actor`, `Action`, `Object`, `Outcome`, `Source IP`, `Contextual Data`). A precisão temporal foi elevada através da adoção sistemática de UTC em nível de formatador de backend e nas strings de mensagem. No cliente, a visibilidade sobre a origem das requisições foi aprimorada com a integração de metadados de rede provenientes do Nginx/OAuth2 Proxy.
