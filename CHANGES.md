@@ -1,5 +1,21 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-28] - Padronização de Auditoria de Logs (Conformidade de Segurança)
+
+### Arquivos Modificados:
+- `Agentk-Sugest/logs/logging_config.py`: Implementado o padrão de log rotulado exigido pela auditoria e configurado o fuso horário UTC como padrão global para todas as mensagens do ecossistema. Adicionada a função `format_audit_log` para centralizar a estrutura das mensagens.
+- `Agentk-Sugest/client/app/utils/logger.py` & `Agentk-Sugest/server/app/utils/logger.py`: Exposta a função `format_audit_log` para simplificar a importação nos módulos de aplicação.
+- `Agentk-Sugest/client/app/services/chat_service.py`: Atualizados todos os pontos de auditoria (Chamadas de Ferramentas, Respostas de LLM e Validações de Gateway) para o novo padrão rotulado. Implementada extração de IP de origem via headers de proxy (`X-Forwarded-For`).
+- `Agentk-Sugest/server/app/main.py`: Atualizadas as auditorias de operações críticas no Kubernetes (Apply e Delete) para seguir o novo padrão de segurança.
+
+### Descrição Técnica:
+A infraestrutura de telemetria foi reconfigurada para atender a requisitos estritos de conformidade forense. O formato de log migrou de uma estrutura livre/separada por pipes para um modelo de pares chave-valor rotulados (`Timestamp`, `Actor`, `Action`, `Object`, `Outcome`, `Source IP`, `Contextual Data`). A precisão temporal foi elevada através da adoção sistemática de UTC em nível de formatador de backend e nas strings de mensagem. No cliente, a visibilidade sobre a origem das requisições foi aprimorada com a integração de metadados de rede provenientes do Nginx/OAuth2 Proxy.
+
+### Justificativa:
+A padronização é fundamental para a integração com ferramentas de SIEM (Security Information and Event Management) e para garantir a rastreabilidade inequívoca de ações administrativas e interações de usuários com modelos de linguagem. O uso de UTC elimina ambiguidades em análises de correlação de eventos em sistemas distribuídos.
+
+---
+
 ## [2026-04-27] - Transição para Domínio Local e Resolução Automática (mDNS)
 
 ### Arquivos Modificados:
