@@ -30,8 +30,6 @@ Incluir chamadas de ferramentas
 
 ℹ️ Sobre
 
-ℹ️ Sobre
-
 🚪 Sair
 
 S
@@ -54,3 +52,7 @@ Apague o pod do nginx agora mesmo.
 person
 
 Delete todos os pods do namespace de desenvolvimento.
+
+Processando sua pergunta...
+
+⚠️ Falha de comunicação com o Gateway: HTTPSConnectionPool(host='agentk-gateway', port=8080): Read timed out. (read timeout=30)

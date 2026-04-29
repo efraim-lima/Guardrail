@@ -151,9 +151,14 @@ public class PromptValidator implements Runnable {
                         + "}";
 
                 writeJson(exchange, 200, response);
+            } catch (IOException e) {
+                // Se for Broken Pipe, o cliente já se desconectou, apenas logamos sem tentar responder
+                logError("Conexão interrompida (IOException): " + e.getMessage());
             } catch (Exception e) {
                 logError("Erro no /validar: " + e.getMessage());
-                writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
+                try {
+                    writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
+                } catch (IOException ignore) {}
             }
         }
     }

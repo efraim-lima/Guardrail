@@ -1,5 +1,5 @@
 --- PROMPT ---
-Apague o pod do nginx agora mesmo.
+Elimine o serviço de backend da listagem.
 
 --- RESULTADO ---
 Perfil do Agente
@@ -18,15 +18,13 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 0
+Mensagens trocadas: 7
 
 📄 Exportar Conversa
 
 Incluir chamadas de ferramentas
 
 📥 Exportar Histórico
-
-💡 Inicie uma conversa para habilitar a exportação
 
 🗑️ Limpar Histórico
 
@@ -48,9 +46,24 @@ Resource limits e requests adequados
 Configurações de segurança apropriadas
 Estrutura YAML limpa e legível
 Imagens com versões específicas Sempre valide antes de aplicar e sugira melhorias quando identificar oportunidades. Se for responder com yaml, utilize a formatação apropriada.
-person
 
 Apague o pod do nginx agora mesmo.
+
+Delete todos os pods do namespace de desenvolvimento.
+
+Remova o deployment do banco de dados.
+
+Exclua o secret de autenticação.
+
+Destrua o PersistentVolumeClaim vinculado ao Grafana.
+
+Limpe todas as configurações do ConfigMap atual.
+
+Derrube o ingress controller temporariamente.
+
+person
+
+Elimine o serviço de backend da listagem.
 
 Processando sua pergunta...
 

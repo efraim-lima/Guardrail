@@ -1,5 +1,41 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Aprimoramento de Diagnóstico e Resiliência na Conectividade Ollama
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Implementada extração e log detalhado de exceções (nome da classe e mensagem) durante o ciclo de classificação. Aprimorada a detecção de erros HTTP para incluir o corpo da resposta do Ollama no log de erro, facilitando a identificação de modelos ausentes ou falhas internas do motor de inferência. Refatorada a lógica de fallback para suportar detecção de hostnames genéricos via `URI.getHost()`.
+- `src/main/java/PromptValidator.java`: Refatorado o manipulador do endpoint `/validar` para tratar `IOException` de forma isolada, mitigando logs redundantes e prevenindo tentativas de escrita em sockets encerrados (Broken Pipe). Adicionado tratamento preventivo no fluxo de erro para evitar loops de resposta.
+- `Agentk-Sugest/client/app/services/chat_service.py`: Elevado o timeout da requisição de validação de 30 para 90 segundos. Esta alteração sincroniza a tolerância do cliente com a latência observada em modelos LLM locais (Ollama) sob carga, eliminando interrupções prematuras da conexão.
+
+### Descrição Técnica:
+A análise forense dos logs indicou que a falha original na classificação era mascarada por um tratamento de exceção genérico, enquanto a interrupção da conexão ("Broken Pipe") era um sintoma secundário causado pelo timeout agressivo do cliente Streamlit (30s) frente ao limite superior do Gateway (60s). A nova implementação estabelece um canal de telemetria mais transparente, expondo a causa-raiz das falhas do Ollama, e sincroniza os limites temporais de toda a cadeia de requisição. A lógica de fallback do Java também foi tornada mais agnóstica à infraestrutura, utilizando resolução baseada em URI em vez de correspondência de strings literais.
+
+---
+
+## [2026-04-29] - Implementação de Sinalização Baseada em Eventos de DOM (Sincronização Robusta)
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/main.py`: Injetado componente JS para gerenciar o atributo `data-agentk-ready` no `body` do navegador, sinalizando o início e o fim atômico de cada ciclo de processamento do Streamlit.
+- `Agentk-Sugest/client/app/services/chat_service.py`: Garantida a emissão do sinal de "pronto" mesmo em fluxos de exceção ou interrupção por segurança (`st.stop`).
+- `scripts/prompt_crawler.py`: Migrada a lógica de espera para o monitoramento do atributo `data-agentk-ready`.
+
+### Descrição Técnica:
+A sincronização baseada em estados de componentes UI (como spinners ou campos desabilitados) provou-se insuficiente devido às latências de renderização e comportamentos assíncronos do Streamlit. A nova abordagem utiliza sinalização direta via DOM API: o cliente AgentK agora "avisa" explicitamente ao ambiente (e consequentemente ao Playwright) quando terminou de processar uma requisição, definindo um atributo global. Isso elimina qualquer ambiguidade sobre a prontidão da interface para o próximo comando.
+
+---
+
+
+## [2026-04-29] - Sincronização de Fluxo Baseada em Estado de Componente (Prompt Crawler)
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Substituída a detecção de processamento baseada em `stSpinner` por monitoramento do atributo `disabled` do `st.chat_input`. Esta mudança garante que o crawler aguarde o ciclo completo de execução do Streamlit antes de prosseguir para o próximo prompt, eliminando disparos acidentais em série que causavam o travamento da interface.
+
+### Descrição Técnica:
+A lógica anterior baseada em spinner era vulnerável a "race conditions" quando o componente demorava a aparecer ou era suprimido por mensagens de erro/aviso do Gateway. Ao ancorar a sincronização no estado do campo de entrada (que o Streamlit gerencia de forma atômica durante o processamento do fragmento), assegura-se que o crawler opere em paridade com o estado real de prontidão da aplicação.
+
+---
+
+
 ## [2026-04-29] - Mitigação de Timeouts e Otimização de Resposta (Gateway Java)
 
 ### Arquivos Modificados:

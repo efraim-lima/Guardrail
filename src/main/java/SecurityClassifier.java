@@ -55,7 +55,7 @@ public class SecurityClassifier {
             String verdict = evaluateResponse(llmResponse);
             return verdict;
         } catch (Exception e) {
-            logError("Falha ao classificar prompt usando Ollama em " + ollamaUrl);
+            logError("Falha ao classificar prompt usando Ollama em " + ollamaUrl + ". Erro: [" + e.getClass().getSimpleName() + "] " + e.getMessage());
             return "UNCERTAIN";
         }
     }
@@ -102,7 +102,10 @@ public class SecurityClassifier {
         try {
             return sendGenerateRequest(ollamaUrl, aiPrompt);
         } catch (IOException e) {
-            if (ollamaUrl.contains("127.0.0.1") || ollamaUrl.contains("localhost")) {
+            String targetHost = URI.create(ollamaUrl).getHost();
+            boolean isLocal = "127.0.0.1".equals(targetHost) || "localhost".equals(targetHost);
+            
+            if (isLocal) {
                 String fallbackUrl = ollamaUrl
                         .replace("127.0.0.1", "host.docker.internal")
                         .replace("localhost", "host.docker.internal");
@@ -131,7 +134,8 @@ public class SecurityClassifier {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("Ollama retornou HTTP " + response.statusCode());
+            String errorMsg = (response.body() != null && !response.body().isBlank()) ? response.body() : "Sem corpo de erro";
+            throw new IOException("Ollama retornou HTTP " + response.statusCode() + ": " + errorMsg);
         }
 
         if (response.body() == null || response.body().trim().isEmpty()) {

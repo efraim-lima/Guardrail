@@ -30,8 +30,6 @@ Incluir chamadas de ferramentas
 
 ℹ️ Sobre
 
-ℹ️ Sobre
-
 🚪 Sair
 
 S
@@ -56,3 +54,7 @@ Delete todos os pods do namespace de desenvolvimento.
 person
 
 Remova o deployment do banco de dados.
+
+Processando sua pergunta...
+
+⚠️ Falha de comunicação com o Gateway: HTTPSConnectionPool(host='agentk-gateway', port=8080): Read timed out. (read timeout=30)

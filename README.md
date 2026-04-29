@@ -241,7 +241,7 @@ git clone <https://github.com/efraim-lima/Agentk-Sugest.git>
 bash setup.sh
 ```
 
-Caso ocorra algum erro proveniente do docker basta remover os containers, limpar o sistema e rodar o setup novamente:
+Caso ocorra algum erro proveniente do docker compose down basta remover os containers, limpar o sistema e rodar o setup novamente:
 ```bash
 sudo docker stop $(sudo docker ps -aq)
 
