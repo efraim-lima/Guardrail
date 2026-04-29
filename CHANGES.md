@@ -8,6 +8,8 @@
 - `Agentk-Sugest/client/app/services/chat_service.py`: Atualizados todos os pontos de auditoria (Chamadas de Ferramentas, Respostas de LLM e Validações de Gateway) para o novo padrão rotulado. Implementada extração de IP de origem via headers de proxy (`X-Forwarded-For`).
 - `Agentk-Sugest/server/app/main.py`: Atualizadas as auditorias de operações críticas no Kubernetes (Apply e Delete) para seguir o novo padrão de segurança.
 - `Agentk-Sugest/scratch/verify_logs.py`: Ajustado para utilizar caminhos dinâmicos, garantindo portabilidade entre ambientes locais, Docker e máquinas virtuais.
+- `Agentk-Sugest/server/app/utils/logger.py` & `Agentk-Sugest/client/app/utils/logger.py`: Implementada busca dinâmica do diretório de logs para resolver falhas de importação em ambientes de container onde a estrutura de pastas difere do host.
+- Sincronização de arquivos: Corrigida redundância de configurações de log, assegurando que `format_audit_log` esteja disponível em todas as subpastas `logs/` do projeto.
 - `src/main/java/AuditLogger.java` (Novo): Implementado utilitário de auditoria para o Gateway Java, garantindo paridade de formato com os componentes Python.
 - `src/main/java/Main.java`, `src/main/java/PromptValidator.java` & `src/main/java/SecurityClassifier.java`: Migrados os logs de sistema e auditoria para o novo padrão rotulado com suporte a UTC e captura dinâmica de IP do cliente.
 
