@@ -52,9 +52,7 @@ person
 
 Apague o pod do nginx agora mesmo.
 
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
-
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+Processando sua pergunta...
 
 Formatando ferramentas...
 Ferramentas formatadas com sucesso

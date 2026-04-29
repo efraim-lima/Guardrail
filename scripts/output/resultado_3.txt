@@ -18,7 +18,7 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 4
+Mensagens trocadas: 2
 
 📄 Exportar Conversa
 
@@ -27,6 +27,8 @@ Incluir chamadas de ferramentas
 📥 Exportar Histórico
 
 🗑️ Limpar Histórico
+
+ℹ️ Sobre
 
 ℹ️ Sobre
 
@@ -49,18 +51,8 @@ Imagens com versões específicas Sempre valide antes de aplicar e sugira melhor
 
 Apague o pod do nginx agora mesmo.
 
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
-
 Delete todos os pods do namespace de desenvolvimento.
-
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
 
 person
 
 Remova o deployment do banco de dados.
-
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
-
-🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
-
-O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

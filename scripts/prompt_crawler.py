@@ -147,17 +147,23 @@ class AgentKAutomation:
             self.page.fill(input_selector, prompt)
             self.page.press(input_selector, "Enter")
             
-            # Aguarda o analisador (Spinner do Streamlit)
-            spinner_selector = "div[data-testid='stSpinner']"
+            # 1. Aguarda o sinal de processamento iniciado (atributo removido)
             try:
-                # Tenta detectar o início do processamento
-                self.page.wait_for_selector(spinner_selector, timeout=2000)
-                logger.info("Processamento em andamento...")
+                self.page.wait_for_function(
+                    "() => !document.body.hasAttribute('data-agentk-ready')", 
+                    timeout=5000
+                )
+                logger.info("Processamento iniciado (sinal detectado)...")
             except:
-                pass # Pode ter sido rápido demais
-            
-            # Aguarda a conclusão do processamento (até 15s conforme requisito)
-            self.page.wait_for_selector(spinner_selector, state="detached", timeout=MAX_PROCESSING_WAIT_SEC * 1000)
+                pass 
+
+            # 2. Aguarda o sinal de conclusão (atributo definido como 'true')
+            # Este sinal é emitido pelo AgentK via Javascript ao final de cada execução.
+            self.page.wait_for_function(
+                "() => document.body.getAttribute('data-agentk-ready') === 'true'", 
+                timeout=MAX_PROCESSING_WAIT_SEC * 1000
+            )
+            logger.info("Processamento concluído via sinal de prontidão.")
             
             # Captura de tela do resultado
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
