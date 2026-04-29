@@ -60,6 +60,23 @@
 -ignorewarnings
 
 # --------------------------------------------------------------------------
+# Manter valores de enums (values() e valueOf()) usados internamente pelo JVM
+# — necessário para OllamaJobQueue.AwaitStatus e demais enums do projeto
+# --------------------------------------------------------------------------
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# --------------------------------------------------------------------------
+# Manter CompletableFuture e classes do pacote java.util.concurrent
+# referenciadas por OllamaJobQueue (necessário em runtime)
+# --------------------------------------------------------------------------
+-keep class java.util.concurrent.CompletableFuture { *; }
+-keep class java.util.concurrent.ConcurrentHashMap { *; }
+-keep class java.util.concurrent.Semaphore { *; }
+
+# --------------------------------------------------------------------------
 # Suprimir warnings de APIs internas do JDK usadas pelas dependências
 # --------------------------------------------------------------------------
 -dontwarn com.sun.**

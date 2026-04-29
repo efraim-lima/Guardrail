@@ -10,6 +10,7 @@ public class Main {
     private static final String WEBHOOK_PATH = envOr("WEBHOOK_PATH", "/validar");
 
     private ExecutorService threadPool;
+    private OllamaJobQueue jobQueue;
     private PromptValidator webhookServer;
     private volatile boolean running = true;
 
@@ -41,11 +42,12 @@ public class Main {
 
         this.threadPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         SecurityClassifier classifier = new SecurityClassifier();
+        this.jobQueue = new OllamaJobQueue(classifier);
 
         this.webhookServer = new PromptValidator(
                 WEBHOOK_PORT,
                 WEBHOOK_PATH,
-                classifier,
+                jobQueue,
                 threadPool
         );
 
@@ -80,6 +82,10 @@ public class Main {
 
         if (webhookServer != null) {
             webhookServer.stop();
+        }
+
+        if (jobQueue != null) {
+            jobQueue.shutdown();
         }
 
         if (threadPool != null) {

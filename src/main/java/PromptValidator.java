@@ -24,31 +24,31 @@ import java.util.concurrent.ExecutorService;
  *
  * Endpoint HTTP para receber prompts do cliente MCP e retornar veredito.
  *
- * URL padrão:
- *   POST http://0.0.0.0:8080/validar
- *
- * Corpo aceito:
- *   1) JSON: {"prompt":"..."}
- *   2) Texto puro: "..."
+ * Fluxo assíncrono (estilo Redis + Celery):
+ *   POST /validar            → submete à fila, retorna HTTP 202 com {job_id, status:"QUEUED"}
+ *   GET  /resultado/{jobId}  → long-poll que aguarda o veredito do Ollama (sem timeout de conexão)
+ *   GET  /health             → health-check do serviço
  */
 public class PromptValidator implements Runnable {
-    private static final String LOG_PREFIX = "[PromptWebhook]";
+    private static final String LOG_PREFIX         = "[PromptWebhook]";
+    private static final long   RESULT_POLL_TIMEOUT = Long.parseLong(
+            envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "120"));
 
-    private final int port;
-    private final String path;
-    private final SecurityClassifier classifier;
-    private final ExecutorService executorService;
+    private final int              port;
+    private final String           path;
+    private final OllamaJobQueue   jobQueue;
+    private final ExecutorService  executorService;
 
     private volatile boolean running = true;
     private HttpServer server;
 
     public PromptValidator(int port,
-                                         String path,
-                                         SecurityClassifier classifier,
-                                         ExecutorService executorService) {
-        this.port = port;
-        this.path = (path == null || path.isBlank()) ? "/validar" : path;
-        this.classifier = classifier;
+                           String path,
+                           OllamaJobQueue jobQueue,
+                           ExecutorService executorService) {
+        this.port           = port;
+        this.path           = (path == null || path.isBlank()) ? "/validar" : path;
+        this.jobQueue       = jobQueue;
         this.executorService = executorService;
     }
 
@@ -93,11 +93,13 @@ public class PromptValidator implements Runnable {
             }
             
             this.server.createContext(path, new ValidateHandler());
+            this.server.createContext("/resultado", new ResultHandler());
             this.server.createContext("/health", new HealthHandler());
             this.server.setExecutor(executorService);
             this.server.start();
 
             log("Healthcheck em http(s)://0.0.0.0:" + port + "/health");
+            log("Resultado   em http(s)://0.0.0.0:" + port + "/resultado/{jobId}");
 
             while (running) {
                 Thread.sleep(1000);
@@ -117,12 +119,16 @@ public class PromptValidator implements Runnable {
         }
     }
 
+    /**
+     * POST /validar — Recebe o prompt, submete à fila assíncrona e retorna job_id imediatamente.
+     * HTTP 202 Accepted: {"job_id":"...","status":"QUEUED"}
+     * HTTP 503 Service Unavailable: quando a fila está saturada.
+     */
     private class ValidateHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
-                String method = exchange.getRequestMethod();
-                if (!"POST".equalsIgnoreCase(method)) {
+                if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                     writeJson(exchange, 405, "{\"error\":\"Method not allowed\",\"allowed\":\"POST\"}");
                     return;
                 }
@@ -138,21 +144,20 @@ public class PromptValidator implements Runnable {
                 }
 
                 String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
-                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp, "snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
+                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp,
+                        "snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
 
-                String verdict = classifier.classify(prompt);
-                boolean allowed = "SAFE".equals(verdict);
-
-                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", verdict, sourceIp, "allowed=" + allowed);
-
-                String response = "{"
-                        + "\"prompt\":\"" + escapeJson(prompt) + "\","
-                        + "\"veredito\":\"" + escapeJson(verdict) + "\""
-                        + "}";
-
-                writeJson(exchange, 200, response);
+                try {
+                    String jobId = jobQueue.submit(prompt);
+                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "ACCEPTED", sourceIp,
+                            "prompt_length=" + prompt.length());
+                    writeJson(exchange, 202,
+                            "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
+                } catch (IllegalStateException e) {
+                    writeJson(exchange, 503,
+                            "{\"error\":\"queue_full\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}");
+                }
             } catch (IOException e) {
-                // Se for Broken Pipe, o cliente já se desconectou, apenas logamos sem tentar responder
                 logError("Conexão interrompida (IOException): " + e.getMessage());
             } catch (Exception e) {
                 logError("Erro no /validar: " + e.getMessage());
@@ -163,10 +168,80 @@ public class PromptValidator implements Runnable {
         }
     }
 
+    /**
+     * GET /resultado/{jobId} — Long-poll que bloqueia até o veredito do Ollama ficar pronto.
+     *
+     * HTTP 200: {"job_id":"...","prompt":"...","veredito":"SAFE","status":"DONE"}
+     * HTTP 202: {"job_id":"...","status":"PROCESSING"}  (timeout do servidor; cliente deve retentar)
+     * HTTP 404: {"error":"job_not_found","job_id":"..."}
+     */
+    private class ResultHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    writeJson(exchange, 405, "{\"error\":\"Method not allowed\",\"allowed\":\"GET\"}");
+                    return;
+                }
+
+                // Extrai jobId do path: /resultado/{jobId}
+                String uriPath = exchange.getRequestURI().getPath();
+                String prefix  = "/resultado/";
+                if (!uriPath.startsWith(prefix) || uriPath.length() <= prefix.length()) {
+                    writeJson(exchange, 400, "{\"error\":\"job_id ausente na URL\"}");
+                    return;
+                }
+                String jobId = uriPath.substring(prefix.length());
+
+                if (!jobQueue.exists(jobId)) {
+                    writeJson(exchange, 404,
+                            "{\"error\":\"job_not_found\",\"job_id\":\"" + escapeJson(jobId) + "\"}");
+                    return;
+                }
+
+                String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+                OllamaJobQueue.AwaitResult result = jobQueue.awaitResult(jobId, RESULT_POLL_TIMEOUT);
+
+                switch (result.status) {
+                    case DONE:
+                        AuditLogger.log("anonymous", "JOB_RESULT", jobId, result.verdict,
+                                sourceIp, "status=DONE");
+                        writeJson(exchange, 200,
+                                "{\"job_id\":\""   + escapeJson(jobId)         + "\","
+                                + "\"prompt\":\""  + escapeJson(result.prompt)  + "\","
+                                + "\"veredito\":\"" + escapeJson(result.verdict) + "\","
+                                + "\"status\":\"DONE\"}");
+                        break;
+                    case PROCESSING:
+                        writeJson(exchange, 202,
+                                "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"PROCESSING\"}");
+                        break;
+                    default: // NOT_FOUND (corrida com TTL cleanup)
+                        writeJson(exchange, 404,
+                                "{\"error\":\"job_not_found\",\"job_id\":\"" + escapeJson(jobId) + "\"}");
+                        break;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                try {
+                    writeJson(exchange, 503, "{\"error\":\"server_interrupted\"}");
+                } catch (IOException ignore) {}
+            } catch (IOException e) {
+                logError("Conexão interrompida em /resultado: " + e.getMessage());
+            } catch (Exception e) {
+                logError("Erro em /resultado: " + e.getMessage());
+                try {
+                    writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
+                } catch (IOException ignore) {}
+            }
+        }
+    }
+
     private class HealthHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            writeJson(exchange, 200, "{\"status\":\"ok\"}");
+            writeJson(exchange, 200,
+                    "{\"status\":\"ok\",\"pending_jobs\":" + jobQueue.pendingCount() + "}");
         }
     }
 
@@ -293,6 +368,11 @@ public class PromptValidator implements Runnable {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    private static String envOr(String key, String fallback) {
+        String value = System.getenv(key);
+        return (value != null && !value.isBlank()) ? value : fallback;
     }
 
     private static void log(String msg) {

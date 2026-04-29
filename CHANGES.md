@@ -1,5 +1,21 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Implementação de Fila de Processamento Assíncrono para Chamadas ao Ollama
+
+### Arquivos Modificados/Criados:
+- `src/main/java/OllamaJobQueue.java` (**NOVO**): Implementação de fila de processamento paralelo dedicada às chamadas ao Ollama, equivalente ao padrão Redis + Celery (Python), inteiramente em Java nativo.
+- `src/main/java/PromptValidator.java`: Refatorado para utilizar `OllamaJobQueue`. O endpoint `POST /validar` agora retorna HTTP 202 com `{job_id, status:"QUEUED"}` imediatamente, sem bloquear a conexão do cliente. Adicionado novo handler `GET /resultado/{jobId}` para long-poll assíncrono do veredito.
+- `src/main/java/Main.java`: Instancia `OllamaJobQueue` após o `SecurityClassifier` e o injeta no `PromptValidator`. O encerramento gracioso (`shutdown()`) agora também aguarda o pool de workers do `OllamaJobQueue`.
+- `proguard-rules.pro`: Adicionadas regras para preservar os métodos `values()` e `valueOf()` de enums (necessário para `OllamaJobQueue.AwaitStatus`) e declarações explícitas de `java.util.concurrent.CompletableFuture`, `ConcurrentHashMap` e `Semaphore`.
+- `Agentk-Sugest/client/app/services/chat_service.py`: Adicionado `import urllib.parse`. Fluxo de validação do Gateway atualizado para o padrão assíncrono: `POST /validar` (timeout 30 s) → obtém `job_id` → `GET /resultado/{job_id}` long-poll (timeout 130 s). Mantida compatibilidade retroativa com respostas síncronas (HTTP 200 legado).
+
+### Descrição Técnica:
+A arquitetura anterior submetia cada chamada ao Ollama de forma síncrona dentro da thread HTTP, sujeita ao timeout da conexão do cliente (90 s). Em cenários de alta concorrência ou latência elevada do modelo LLM, isso resultava em erros de timeout mesmo com o servidor ainda processando.
+
+A nova implementação segue o padrão de mensageria assíncrona (Redis + Celery): ao receber `POST /validar`, o servidor submete imediatamente o prompt a um `CompletableFuture` gerenciado pelo `OllamaJobQueue` (pool de workers configurável via `OLLAMA_WORKERS`, padrão 4), retornando HTTP 202 com um `job_id` UUID em milissegundos. O cliente então realiza uma única requisição `GET /resultado/{job_id}` que fica em long-poll bloqueante no servidor (até `OLLAMA_RESULT_TIMEOUT_SECONDS`, padrão 120 s), sem ocupar threads adicionais de IO no cliente. Uma vez que o worker do Ollama produz o veredito, o `CompletableFuture` é resolvido e a resposta HTTP é enviada ao cliente. A capacidade máxima da fila é controlada por um `Semaphore` justo (`OLLAMA_MAX_QUEUE`, padrão 200), com retorno HTTP 503 em caso de sobrecarga. Jobs expiram automaticamente após 10 minutos via `ScheduledExecutorService`, evitando vazamento de memória. O endpoint `/health` foi estendido para expor a contagem de jobs pendentes.
+
+---
+
 ## [2026-04-29] - Otimização de Performance e Fast-Path de Similaridade Semântica
 
 ### Arquivos Modificados:

@@ -52,6 +52,8 @@ person
 
 Apague o pod do nginx agora mesmo.
 
-Processando sua pergunta...
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
-⚠️ Falha de comunicação com o Gateway: HTTPSConnectionPool(host='agentk-gateway', port=8080): Read timed out. (read timeout=30)
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação
