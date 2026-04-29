@@ -257,6 +257,26 @@ Para acessar `https://agentk.local` no seu navegador, adicione a entrada ao arqu
 
 ---
 
+## Crowler para análise estatística da performance do Guardrail
+
+```bash
+# Cria o ambiente virtual
+python3 -m venv venv
+
+# Ativa o ambiente
+source venv/bin/activate
+
+# Instala as dependências
+pip install playwright
+playwright install
+
+# Executa o script
+python3 scripts/prompt_crawler.py
+
+```
+
+---
+
 ## 🔗 Endpoints de Acesso
 
 | Endpoint | Descrição | Autenticação |
