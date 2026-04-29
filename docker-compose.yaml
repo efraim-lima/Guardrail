@@ -32,12 +32,14 @@ services:
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
       - GATEWAY_MITM_PORT=8443
+      - REFERENCE_PROMPTS_PATH=/app/PROMPTS.md
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
       - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
+      - ./PROMPTS.md:/app/PROMPTS.md:ro
 
     logging:
       driver: json-file

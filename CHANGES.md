@@ -1,6 +1,36 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Integração de Histórico de Prompts como Base de Referência (Few-Shot Prompting)
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Implementada lógica de carregamento dinâmico do arquivo `PROMPTS.md` e enriquecimento do prompt do sistema com este banco de dados de exemplos. Adicionado suporte ao padrão "Fail-Fast" para validação de existência do arquivo e tratamento de exceções de I/O.
+- `docker-compose.yaml`: Configurado o mapeamento de volume para o arquivo `PROMPTS.md` no serviço `agentk-gateway` e definida a variável de ambiente `REFERENCE_PROMPTS_PATH` para apontar para o local interno do container.
+
+### Descrição Técnica:
+A arquitetura do Guardrail foi aprimorada através da implementação de um mecanismo de "Reference History" (Histórico de Referência). Esta técnica permite que o modelo de linguagem local (Ollama) utilize um conjunto de exemplos pré-classificados (SAFE, SUSPECT, UNSAFE, RISKY, UNCERTAIN) como contexto imediato (Few-Shot Prompting) antes de emitir um veredito sobre o prompt do usuário. A carga do arquivo é realizada durante a inicialização do `SecurityClassifier`, garantindo performance e reduzindo a latência de processamento. O sistema agora opera com uma base de conhecimento dinâmica, permitindo que novas regras e exemplos sejam adicionados ao `PROMPTS.md` sem a necessidade de recompilação do código Java.
+
+### Justificativa:
+A utilização de exemplos históricos aumenta significativamente a precisão da classificação semântica da IA, reduzindo falsos positivos em categorias críticas como `SUSPECT` e `RISKY`. A centralização do histórico em um arquivo Markdown facilita a manutenção por parte de especialistas de segurança e engenheiros de prompt, permitindo ajustes finos no comportamento do Gateway de forma declarativa.
+
+---
+
+
+## [2026-04-29] - Automação de Testes de Prompts (AgentK Crawler)
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py` (Novo): Desenvolvido script de automação em Python utilizando Playwright para realizar o crawling e validação de prompts na plataforma `agentk.local`.
+- `PROMPTS.md`: Sincronizado o arquivo de prompts da raiz com a base de dados de testes presente em `src/main/java/PROMPTS.md`.
+
+### Descrição Técnica:
+Implementação de uma ferramenta de automação robótica (RPA) para validação em massa dos vereditos do Guardrail. O script utiliza o framework Playwright para gerenciar o ciclo de vida do navegador, lidando automaticamente com a autenticação via Keycloak e a interação com a interface Streamlit. A lógica respeita o tempo de processamento das LLMs (até 15 segundos), realiza capturas de tela full-page para auditoria visual e extrai o conteúdo textual para análise forense. O código foi estruturado seguindo os princípios de SRP (Single Responsibility Principle) e Fail-Fast, garantindo robustez e rastreabilidade através de logs detalhados.
+
+### Justificativa:
+A necessidade de validar centenas de variações de prompts contra o sensor de segurança exige uma abordagem automatizada para garantir a cobertura de testes e a precisão dos vereditos (SAFE, SUSPECT, UNSAFE, etc.) sem intervenção humana exaustiva.
+
+---
+
 ## [2026-04-28] - Padronização de Auditoria de Logs (Conformidade de Segurança)
+
 
 ### Arquivos Modificados:
 - `Agentk-Sugest/logs/logging_config.py`: Implementado o padrão de log rotulado exigido pela auditoria e configurado o fuso horário UTC como padrão global para todas as mensagens do ecossistema. Adicionada a função `format_audit_log` para centralizar a estrutura das mensagens.
