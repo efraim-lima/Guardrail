@@ -6,6 +6,8 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * SecurityClassifier.java - Integração com Ollama
@@ -27,6 +29,13 @@ public class SecurityClassifier {
     private final String model;
     private final String referencePrompts;
     private final int ollamaTimeout;
+    private final List<PromptExample> database;
+    private final Map<String, String> cache = Collections.synchronizedMap(new LinkedHashMap<String, String>(128, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 100;
+        }
+    });
 
     public SecurityClassifier() {
         this.httpClient = HttpClient.newBuilder()
@@ -36,6 +45,7 @@ public class SecurityClassifier {
         this.model = envOr("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL);
         this.ollamaTimeout = Integer.parseInt(envOr("OLLAMA_TIMEOUT", String.valueOf(DEFAULT_OLLAMA_TIMEOUT)));
         this.referencePrompts = loadReferencePrompts();
+        this.database = parseDatabase(this.referencePrompts);
     }
 
     /**
@@ -49,10 +59,28 @@ public class SecurityClassifier {
             return "UNCERTAIN";
         }
 
+        String normalized = userPrompt.trim();
+        
+        // 1. Cache Check
+        String cached = cache.get(normalized);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 2. Similarity Fast-Path
+        for (PromptExample example : database) {
+            if (calculateJaccard(normalized, example.text) > 0.90) {
+                cache.put(normalized, example.category);
+                return example.category;
+            }
+        }
+
+        // 3. LLM Processing
         try {
             String aiPrompt = buildAIPrompt(userPrompt);
             String llmResponse = queryLocalLLM(aiPrompt);
             String verdict = evaluateResponse(llmResponse);
+            cache.put(normalized, verdict);
             return verdict;
         } catch (Exception e) {
             logError("Falha ao classificar prompt usando Ollama em " + ollamaUrl + ". Erro: [" + e.getClass().getSimpleName() + "] " + e.getMessage());
@@ -120,7 +148,13 @@ public class SecurityClassifier {
         String body = "{"
                 + "\"model\":\"" + escapeJson(model) + "\"," 
                 + "\"prompt\":\"" + escapeJson(aiPrompt) + "\"," 
-                + "\"stream\":false"
+                + "\"stream\":false,"
+                + "\"options\":{"
+                + "\"temperature\":0.0,"
+                + "\"num_predict\":10,"
+                + "\"top_k\":20,"
+                + "\"top_p\":0.5"
+                + "}"
                 + "}";
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -168,6 +202,53 @@ public class SecurityClassifier {
         }
 
         return "UNCERTAIN";
+    }
+
+    private double calculateJaccard(String s1, String s2) {
+        Set<String> h1 = tokenize(s1);
+        Set<String> h2 = tokenize(s2);
+        int size1 = h1.size();
+        int size2 = h2.size();
+        if (size1 == 0 || size2 == 0) return 0.0;
+        h1.retainAll(h2);
+        int intersection = h1.size();
+        return (double) intersection / (size1 + size2 - intersection);
+    }
+
+    private Set<String> tokenize(String s) {
+        if (s == null) return new HashSet<>();
+        return Arrays.stream(s.toLowerCase().split("\\W+"))
+                .filter(t -> t.length() > 2)
+                .collect(Collectors.toSet());
+    }
+
+    private List<PromptExample> parseDatabase(String content) {
+        List<PromptExample> examples = new ArrayList<>();
+        if (content == null || content.isBlank()) return examples;
+
+        String currentCategory = "UNCERTAIN";
+        String[] lines = content.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("##")) {
+                currentCategory = trimmed.replace("#", "").trim().toUpperCase();
+            } else if (!trimmed.isEmpty() && Character.isDigit(trimmed.charAt(0))) {
+                String text = trimmed.replaceAll("^\\d+\\.\\s*", "").trim();
+                if (!text.isEmpty()) {
+                    examples.add(new PromptExample(text, currentCategory));
+                }
+            }
+        }
+        return examples;
+    }
+
+    private static class PromptExample {
+        final String text;
+        final String category;
+        PromptExample(String text, String category) {
+            this.text = text;
+            this.category = category;
+        }
     }
 
     private static String escapeJson(String value) {

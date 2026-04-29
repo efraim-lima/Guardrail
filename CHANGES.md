@@ -1,5 +1,17 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Otimização de Performance e Fast-Path de Similaridade Semântica
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Implementado sistema de "Fast-Path" baseado em similaridade de Jaccard. O componente agora realiza o parsing do arquivo `PROMPTS.md` durante a inicialização, criando um banco de dados de referência em memória. Prompts que apresentam similaridade superior a 90% com exemplos conhecidos recebem um veredito instantâneo, ignorando a chamada ao Ollama.
+- `src/main/java/SecurityClassifier.java`: Introduzido cache LRU (Least Recently Used) com capacidade para 100 entradas, evitando o re-processamento de prompts idênticos.
+- `src/main/java/SecurityClassifier.java`: Otimizados os parâmetros de inferência do Ollama via bloco `options` no payload JSON. Foram definidos `temperature: 0.0` para previsibilidade, `num_predict: 10` para limitar a geração de tokens e ajustes de `top_k/top_p` para acelerar a busca semântica.
+
+### Descrição Técnica:
+A arquitetura de validação evoluiu de um modelo puramente baseado em inferência para uma abordagem híbrida de "Cache + Similaridade + LLM". Ao tokenizar e comparar os prompts de entrada com a base de dados de referência local antes de invocar o modelo de linguagem, reduzimos a latência média em ordens de magnitude para casos recorrentes. A limitação de tokens gerados (`num_predict`) ataca diretamente o maior gargalo do Ollama (tempo de decodificação), garantindo que o motor de IA foque apenas no veredito categórico.
+
+---
+
 ## [2026-04-29] - Aprimoramento de Diagnóstico e Resiliência na Conectividade Ollama
 
 ### Arquivos Modificados:
