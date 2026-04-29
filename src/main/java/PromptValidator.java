@@ -329,6 +329,20 @@ public class PromptValidator implements Runnable {
                     case '\\':
                         sb.append('\\');
                         break;
+                    case 'u':
+                        // Decodifica sequencias Unicode uXXXX (ex: u00e7 = c com cedilha)
+                        if (i + 4 < json.length()) {
+                            String hex = json.substring(i + 1, i + 5);
+                            try {
+                                sb.append((char) Integer.parseInt(hex, 16));
+                                i += 4;
+                            } catch (NumberFormatException nfe) {
+                                sb.append('u');
+                            }
+                        } else {
+                            sb.append('u');
+                        }
+                        break;
                     default:
                         sb.append(c);
                         break;

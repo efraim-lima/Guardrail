@@ -67,15 +67,23 @@ public class SecurityClassifier {
             return cached;
         }
 
-        // 2. Similarity Fast-Path
+        // 2. Similarity Fast-Path — melhor correspondência >= 80% na base de referência
+        String bestCategory = null;
+        double bestScore    = 0.0;
         for (PromptExample example : database) {
-            if (calculateJaccard(normalized, example.text) > 0.90) {
-                cache.put(normalized, example.category);
-                return example.category;
+            double score = calculateJaccard(normalized, example.text);
+            if (score > bestScore) {
+                bestScore    = score;
+                bestCategory = example.category;
             }
         }
+        if (bestScore >= 0.80) {
+            log("Classificado por similaridade (" + String.format("%.2f", bestScore) + ") → " + bestCategory);
+            cache.put(normalized, bestCategory);
+            return bestCategory;
+        }
 
-        // 3. LLM Processing
+        // 3. LLM Processing — sem correspondência suficiente na base local
         try {
             String aiPrompt = buildAIPrompt(userPrompt);
             String llmResponse = queryLocalLLM(aiPrompt);

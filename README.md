@@ -243,7 +243,6 @@ bash setup.sh
 
 Caso ocorra algum erro proveniente do docker compose down basta remover os containers, limpar o sistema e rodar o setup novamente:
 ```bash
-sudo docker stop $(sudo docker ps -aq)
 
 sudo docker rm -f $(sudo docker ps -aq)
 
