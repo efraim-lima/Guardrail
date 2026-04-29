@@ -1,5 +1,16 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Mitigação de Timeouts e Otimização de Resposta (Gateway Java)
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Aumentado o timeout das requisições ao Ollama de 20 para 60 segundos. Implementado suporte à variável de ambiente `OLLAMA_TIMEOUT` para controle dinâmico da tolerância de processamento.
+
+### Descrição Técnica:
+A inclusão do banco de dados de referência (`PROMPTS.md`) no contexto do sistema elevou significativamente a carga de processamento do modelo LLM local. Em hardware limitado ou sob execução sequencial intensiva (Crawler), o tempo de inferência excedia o limite estático anterior de 20 segundos, resultando em vereditos `UNCERTAIN` por timeout. A nova configuração permite que o modelo conclua a análise de contextos extensos, mantendo a integridade da classificação.
+
+---
+
+
 ## [2026-04-29] - Correção de Gerenciamento de Estado de UI (AgentK Client)
 
 ### Arquivos Modificados:

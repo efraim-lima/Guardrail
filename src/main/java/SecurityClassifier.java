@@ -20,11 +20,13 @@ public class SecurityClassifier {
 
     private static final String DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/api/generate";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
+    private static final int DEFAULT_OLLAMA_TIMEOUT = 60;
 
     private final HttpClient httpClient;
     private final String ollamaUrl;
     private final String model;
     private final String referencePrompts;
+    private final int ollamaTimeout;
 
     public SecurityClassifier() {
         this.httpClient = HttpClient.newBuilder()
@@ -32,6 +34,7 @@ public class SecurityClassifier {
                 .build();
         this.ollamaUrl = envOr("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_URL);
         this.model = envOr("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL);
+        this.ollamaTimeout = Integer.parseInt(envOr("OLLAMA_TIMEOUT", String.valueOf(DEFAULT_OLLAMA_TIMEOUT)));
         this.referencePrompts = loadReferencePrompts();
     }
 
@@ -119,7 +122,7 @@ public class SecurityClassifier {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
-                .timeout(Duration.ofSeconds(20))
+                .timeout(Duration.ofSeconds(ollamaTimeout))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
