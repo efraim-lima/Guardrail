@@ -1,5 +1,38 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Correção de Gerenciamento de Estado de UI (AgentK Client)
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/services/chat_service.py`: Implementado o reset do estado `st.session_state.is_processing` antes de chamadas `st.stop()`. Esta correção impede que a interface do chat permaneça bloqueada (desabilitada) quando o Gateway de segurança intercepta um prompt ou quando ocorrem falhas de comunicação.
+
+### Descrição Técnica:
+O ciclo de vida do Streamlit era interrompido abruptamente por `st.stop()` durante as validações do Gateway, impedindo a execução das linhas de código subsequentes que restauravam a disponibilidade da UI. Ao garantir que o estado de processamento seja resetado manualmente antes da interrupção, o sistema agora permite que o usuário (ou automações como o Crawler) continue interagindo com a aplicação após um bloqueio de segurança ou erro de rede.
+
+---
+
+
+## [2026-04-29] - Otimização de Resiliência e Tratamento de Latência (Prompt Crawler)
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Aumentado o `MAX_PROCESSING_WAIT_SEC` para 60 segundos visando acomodar a latência de geração de respostas em LLMs locais (Ollama) sob carga. Implementada lógica de espera explícita para o estado `enabled` do campo de entrada do Streamlit, prevenindo falhas de timeout (`Page.fill`) quando a interface permanece bloqueada durante o processamento de prompts anteriores.
+
+### Descrição Técnica:
+A automação enfrentava interrupções em prompts complexos (como injeções de sistema) devido ao tempo de resposta do modelo exceder o limite anterior de 15 segundos. Além disso, a natureza assíncrona do Streamlit por vezes mantinha o campo `st.chat_input` desabilitado mesmo após o sumiço do componente de carregamento (`st.spinner`). A solução introduz uma verificação de estado bloqueante com tolerância de 20 segundos para re-habilitação da UI, garantindo a continuidade do fluxo de testes em larga escala.
+
+---
+
+
+## [2026-04-29] - Correção de Inicialização e Resolução de Caminhos (Prompt Crawler)
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Implementada criação automática de diretórios de saída (`output/` e `screenshots/`) antes da inicialização do sistema de logs para evitar `FileNotFoundError`. Migrada a resolução de caminhos de arquivos estáticos para o padrão baseado em `Path(__file__)`, garantindo que o script localize o `PROMPTS.md` independentemente do diretório de trabalho (CWD).
+
+### Descrição Técnica:
+A falha de execução ocorria devido à tentativa do `logging.FileHandler` de gravar em um diretório inexistente. A correção aplica o princípio de "Fail-Fast", validando e criando a infraestrutura de pastas necessária no início do ciclo de vida da aplicação. A robustez do script foi elevada através da ancoragem de caminhos no diretório físico do script, eliminando dependências de contexto de execução externo.
+
+---
+
+
 ## [2026-04-29] - Integração de Histórico de Prompts como Base de Referência (Few-Shot Prompting)
 
 ### Arquivos Modificados:

@@ -230,6 +230,28 @@ Todo o ciclo de vida da infraestrutura é gerenciado pelo `setup.sh`:
 bash setup.sh
 ```
 
+Primeiro, o recomendado, é fazer o git clone do Agentk-Sugest
+
+<https://github.com/efraim-lima/Agentk-Sugest.git>
+
+dentro da pasta root do Guardrail, em seguida rode o script ``setup.sh``
+
+```bash
+git clone <https://github.com/efraim-lima/Agentk-Sugest.git>
+bash setup.sh
+```
+
+Caso ocorra algum erro proveniente do docker basta remover os containers, limpar o sistema e rodar o setup novamente:
+```bash
+sudo docker stop $(sudo docker ps -aq)
+
+sudo docker rm -f $(sudo docker ps -aq)
+
+sudo docker system prune -a --volumes
+
+sudo docker compose down -v
+
+```
 O script executará automaticamente:
 1. **Detecção de IP** da VM e sincronização do `.env`
 2. **Verificação do Avahi** (aviso se não estiver ativo)
@@ -257,7 +279,9 @@ Para acessar `https://agentk.local` no seu navegador, adicione a entrada ao arqu
 
 ---
 
-## Crowler para análise estatística da performance do Guardrail
+## 📊 Crowler para análise estatística da performance do Guardrail
+
+Em ``Guardrail/scripts`` conseguimos acessar o arquivo ``prompt_crawler.py``, ele irá fazer login no agentk, enviar todos os prompts do ``PROMPTS.md`` e coletar os resultados em ``output``.
 
 ```bash
 # Cria o ambiente virtual

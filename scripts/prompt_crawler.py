@@ -15,14 +15,28 @@ from typing import List, Optional, Dict
 from playwright.sync_api import sync_playwright, Browser, Page, TimeoutError
 
 # === CONFIGURAÇÃO (CONSTANTES) ===
+SCRIPT_DIR = Path(__file__).parent.absolute()
+ROOT_DIR = SCRIPT_DIR.parent
+
 AGENTK_URL = os.getenv("AGENTK_URL", "https://agentk.local")
 AGENTK_USER = os.getenv("AGENTK_USER", "efraim")
 AGENTK_PASS = os.getenv("AGENTK_PASS", "633535")
-PROMPTS_FILE = Path("PROMPTS.md")
-OUTPUT_DIR = Path("output")
+
+# Caminhos robustos (baseados na localização do script)
+PROMPTS_FILE = ROOT_DIR / "PROMPTS.md"
+OUTPUT_DIR = SCRIPT_DIR / "output"
 SCREENSHOTS_DIR = OUTPUT_DIR / "screenshots"
-MAX_PROCESSING_WAIT_SEC = 15
+
+MAX_PROCESSING_WAIT_SEC = 60 # Aumentado para lidar com latência de LLM local em ambientes Docker
 LOGIN_TIMEOUT_MS = 30000
+
+# Fail-Fast: Garante que os diretórios de saída existam antes de iniciar o log
+try:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    print(f"Erro fatal ao criar diretórios de saída: {e}")
+    sys.exit(1)
 
 # Configuração de Logging
 logging.basicConfig(
@@ -118,7 +132,18 @@ class AgentKAutomation:
         
         try:
             input_selector = "textarea[data-testid='stChatInputTextArea']"
-            self.page.wait_for_selector(input_selector)
+            
+            # Aguarda o campo estar visível
+            self.page.wait_for_selector(input_selector, state="visible")
+            
+            # Fail-Fast: Aguarda explicitamente o campo ser habilitado (Streamlit re-enabling UI)
+            # O 'fill' do Playwright já tenta fazer isso, mas o loop garante rastreabilidade no log.
+            wait_enabled_start = time.time()
+            while self.page.is_disabled(input_selector):
+                if time.time() - wait_enabled_start > 20: # 20s de tolerância para re-habilitação
+                    raise TimeoutError(f"O campo de input {input_selector} permaneceu desabilitado após processamento anterior.")
+                time.sleep(0.5)
+
             self.page.fill(input_selector, prompt)
             self.page.press(input_selector, "Enter")
             
