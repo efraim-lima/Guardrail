@@ -135,13 +135,11 @@ services:
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
       - KC_HTTP_RELATIVE_PATH=/keycloak
-      - KC_HOSTNAME=${KC_HOSTNAME:-https://agentk.local}
-      - KC_HOSTNAME_ADMIN=${KC_HOSTNAME_ADMIN:-https://agentk.local}
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
-      # KC_HOSTNAME_STRICT removida: o provider v2 ignora hostname-strict quando
-      # KC_HOSTNAME está definido (INFO: "hostname-strict is effectively ignored").
+      # Hostname definido dinamicamente via X-Forwarded-* do Nginx.
+      # Evita WARNs do provider v2 em modo start-dev sobre opções runtime no build-time.
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
@@ -190,7 +188,7 @@ services:
       # Secret padrão gerado pelo realm-agentk.json. Altere em produção via .env.
       - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET:-oauth2-proxy-secret}
       # Issuer: deve bater exatamente com o campo 'iss' dos JWTs emitidos pelo Keycloak.
-      # O Keycloak usa KC_HOSTNAME + KC_HTTP_RELATIVE_PATH como base, resultando neste valor.
+      # Com KC_PROXY_HEADERS=xforwarded, o issuer é derivado do host público encaminhado pelo Nginx.
       - --oidc-issuer-url=https://agentk.local/keycloak/realms/agentk
       # Skip discovery: as URLs abaixo substituem o .well-known/openid-configuration.
       # As URLs internas (http://keycloak:8080/...) são usadas para comunicação
@@ -202,9 +200,12 @@ services:
       - --oidc-jwks-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/certs
       # URL de callback após login — deve ser registrada no cliente Keycloak.
       - --redirect-url=https://agentk.local/oauth2/callback
+      # O oauth2-proxy está atrás do Nginx TLS terminator.
+      - --reverse-proxy=true
       - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
       # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
       - --cookie-secure=true
+      - --cookie-samesite=lax
       - --email-domain=*
       - --skip-provider-button=true
       - --oidc-extra-audience=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}

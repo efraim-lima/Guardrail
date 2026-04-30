@@ -1,4 +1,16 @@
 # Registro de Alterações (Changelog)
+
+## [2026-04-30] - Eliminação de WARNs de Hostname no Keycloak e Ajustes de Callback OIDC
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Removidas as variáveis `KC_HOSTNAME` e `KC_HOSTNAME_ADMIN` do serviço `keycloak`, mantendo apenas `KC_PROXY_HEADERS=xforwarded` e `KC_HTTP_RELATIVE_PATH=/keycloak`. Esse ajuste elimina os WARNs recorrentes `kc.spi-hostname-v2-hostname` e `kc.spi-hostname-v2-hostname-admin` no modo `start-dev`, pois as opções runtime de hostname deixam de ser avaliadas durante a fase de build.
+- `docker-compose.yaml`: Adicionados os parâmetros `--reverse-proxy=true` e `--cookie-samesite=lax` no serviço `oauth2-proxy`, reduzindo inconsistências de callback sob proxy reverso TLS e estabilizando o fluxo de sessão no redirecionamento OIDC.
+- `env.example`: Removida a variável `KC_HOSTNAME_ADMIN`, que deixou de ser necessária após a adoção de resolução dinâmica de hostname via headers de encaminhamento do Nginx.
+
+### Causa Raiz:
+No Keycloak 26 executado em `start-dev`, as opções `KC_HOSTNAME` e `KC_HOSTNAME_ADMIN` eram válidas em runtime, porém sempre geravam aviso durante a etapa de augmentation (`build time`) por natureza do ciclo dev do Quarkus. Como o ambiente já opera atrás de Nginx com cabeçalhos `X-Forwarded-*`, a configuração explícita de hostname tornou-se redundante e foi removida sem perda funcional. Em paralelo, os eventos `CODE_TO_TOKEN_ERROR invalid_code` estavam associados a reuso de código de autorização em tentativas subsequentes no callback; o endurecimento da configuração do oauth2-proxy melhora a consistência da sessão em cenários de retry e navegação concorrente.
+
+---
         
 ## [2026-04-30] - Remoção de KC_HOSTNAME_STRICT Redundante (Keycloak v2)
 
