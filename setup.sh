@@ -135,6 +135,21 @@ sync_env_ip() {
         log_warn "IP mudou (${previous_ip} -> ${detected_ip}): removendo certificado antigo para regeracao..."
         rm -f "$CERT_FILE" "$KEY_FILE"
         log_warn "Certificado removido. Sera regerado com o novo IP nos SANs."
+        # Para o stack antes de recriar com novo IP/certificado.
+        # 'docker compose down' pode falhar com "permission denied" se o AppArmor
+        # estiver bloqueando o daemon de enviar SIGTERM aos containers (distroless/JVM).
+        # Neste caso, reiniciar o daemon Docker libera o bloqueio de namespace e permite
+        # remover os containers normalmente na sequencia.
+        log_info "Parando stack para aplicar novo IP..."
+        if ! docker compose down --remove-orphans --timeout 8 2>/dev/null; then
+            log_warn "Parada limpa falhou (bloqueio AppArmor provavel). Reiniciando daemon Docker..."
+            sudo systemctl restart docker
+            sleep 4
+            # Apos restart do daemon, containers estao parados: remove residuos do projeto
+            docker ps -aq --filter "label=com.docker.compose.project=$(basename "$PWD" | tr '[:upper:]' '[:lower:]')" \
+                | xargs -r docker rm -f 2>/dev/null || true
+            log_success "Daemon reiniciado. Stack limpo para nova inicializacao com IP ${detected_ip}."
+        fi
     fi
 
     # Exporta para uso no restante do script

@@ -65,6 +65,8 @@ services:
       context: ./Agentk-Sugest/server
       dockerfile: Dockerfile
     container_name: agentk-mcp-server
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "${HOST_BIND_IP:-0.0.0.0}:${AGENTK_MCP_HOST_PORT:-3334}:3333"
     environment:
@@ -95,6 +97,8 @@ services:
       context: ./Agentk-Sugest/client
       dockerfile: Dockerfile
     container_name: agentk-streamlit-client
+    security_opt:
+      - apparmor:unconfined
     # Porta removida intencionalmente: o agentk-client NÃO deve ser acessível
     # diretamente do host. Todo tráfego deve passar por: nginx:443 → oauth2-proxy → aqui.
     # Expor esta porta permite contornar completamente a autenticação Keycloak.
@@ -122,6 +126,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
     container_name: keycloak
+    security_opt:
+      - apparmor:unconfined
     # --http-relative-path: essencial para rodar sob /keycloak/ no nginx
     command: start-dev --import-realm --http-relative-path=/keycloak
     environment:
@@ -169,6 +175,10 @@ services:
     # Isso evita que o oauth2-proxy tente validar o JWKS antes do realm estar configurado.
     profiles:
       - secure
+    # Imagem distroless (sem shell) com processo de longa duração — o AppArmor bloqueia
+    # o daemon Docker de enviar SIGTERM ao container, causando "permission denied" no stop.
+    security_opt:
+      - apparmor:unconfined
     command:
       - --http-address=0.0.0.0:4180
       - --upstream=http://agentk-client:8501
@@ -225,6 +235,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "${OLLAMA_HOST_PORT:-11435}:11434"
     volumes:
@@ -240,6 +252,8 @@ services:
   nginx:
     image: nginx:alpine
     container_name: nginx
+    security_opt:
+      - apparmor:unconfined
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro

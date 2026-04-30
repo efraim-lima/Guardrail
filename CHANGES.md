@@ -1,5 +1,16 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-30] - Correção de Bloqueio AppArmor em Mudança de IP Dinâmico
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Adicionado `security_opt: - apparmor:unconfined` em todos os seis serviços (`agentk-gateway`, `agentk-server`, `agentk-client`, `keycloak`, `oauth2-proxy`, `ollama`, `nginx`). O perfil `docker-default` do AppArmor no Ubuntu bloqueava o daemon Docker de enviar `SIGTERM` aos processos de longa duração (JVM do Keycloak, binário distroless do oauth2-proxy, Go runtime do Ollama), resultando em `cannot stop container: permission denied`.
+- `setup.sh`: Adicionada lógica de teardown preventivo em `sync_env_ip()` quando o IP da máquina é alterado. O bloco detecta falha de `docker compose down` (característico do bloqueio AppArmor) e escalona para `sudo systemctl restart docker` como fallback — o restart do daemon libera todos os locks de namespace AppArmor, permitindo a remoção limpa dos containers residuais antes de recriar a stack com o novo IP e certificado.
+
+### Causa Raiz:
+O problema se manifestava exclusivamente ao reexecutar `setup.sh` após mudança de IP (DHCP dinâmico). O fluxo era: detecção de IP novo → remoção do certificado → `docker compose up` tenta recriar containers → Docker Compose chama `docker stop oauth2-proxy` para recriar o container → AppArmor bloqueia o envio de `SIGTERM` do daemon ao processo distroless do oauth2-proxy (sem shell, `docker-default` profile entrada inválida) → `permission denied`. Com `apparmor:unconfined`, o container herda um contexto irrestrito e o daemon recupera o controle completo do ciclo de vida do processo.
+
+---
+
 ## [2026-04-29] - Correção de Timeouts na Cadeia Gateway → Ollama → Crawler
 
 ### Arquivos Modificados:
