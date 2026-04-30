@@ -122,7 +122,7 @@ public class SecurityClassifier {
     }
 
     private String loadReferencePrompts() {
-        String path = envOr("REFERENCE_PROMPTS_PATH", "PROMPTS.md");
+        String path = envOr("REFERENCE_PROMPTS_PATH", "BASE.md");
         try {
             return Files.readString(Paths.get(path));
         } catch (Exception e) {
