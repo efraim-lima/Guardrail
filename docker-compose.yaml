@@ -20,6 +20,10 @@ services:
     #   - "8081:8080"
     cap_add:
       - NET_ADMIN
+    # AppArmor bloqueia o daemon Docker de enviar SIGTERM ao processo Java quando
+    # o container usa cap_add: NET_ADMIN. Sem isso, 'docker stop' retorna "permission denied".
+    security_opt:
+      - apparmor:unconfined
     depends_on:
       - ollama
     networks:
