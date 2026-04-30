@@ -202,6 +202,11 @@ services:
       - --redirect-url=https://agentk.local/oauth2/callback
       # O oauth2-proxy está atrás do Nginx TLS terminator.
       - --reverse-proxy=true
+      # Restringe quais IPs podem enviar X-Forwarded-* confiáveis ao oauth2-proxy.
+      # Defaults portáveis para redes privadas RFC1918 comuns em Docker/VM/VPS.
+      - --trusted-proxy-ip=${OAUTH2_PROXY_TRUSTED_PROXY_IP_1:-172.16.0.0/12}
+      - --trusted-proxy-ip=${OAUTH2_PROXY_TRUSTED_PROXY_IP_2:-10.0.0.0/8}
+      - --trusted-proxy-ip=${OAUTH2_PROXY_TRUSTED_PROXY_IP_3:-192.168.0.0/16}
       - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
       # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
       - --cookie-secure=true
