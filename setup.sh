@@ -312,7 +312,9 @@ phase3_interactive_setup() {
     echo ""
 
     local is_placeholder=false
-    if [[ -z "$current_secret" || "$current_secret" == "SEU_CLIENT_SECRET" || "$current_secret" == "oauth2-proxy-secret" ]]; then
+    # "oauth2-proxy" (sem sufixo "-secret") é um valor inválido comum — o nome do cliente,
+    # não o secret. Tratado como placeholder para forçar redefinição.
+    if [[ -z "$current_secret" || "$current_secret" == "SEU_CLIENT_SECRET" || "$current_secret" == "oauth2-proxy-secret" || "$current_secret" == "oauth2-proxy" ]]; then
         is_placeholder=true
     fi
 

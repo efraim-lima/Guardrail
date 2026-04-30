@@ -248,6 +248,10 @@ sudo docker rm -f $(sudo docker ps -aq)
 
 sudo docker system prune -a --volumes
 
+sudo systemctl restart docker
+
+sudo docker ps -aq | xargs -r sudo docker rm -f
+
 sudo docker compose down -v
 
 ```
