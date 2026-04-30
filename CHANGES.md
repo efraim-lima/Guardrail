@@ -1,6 +1,17 @@
 # Registro de Alterações (Changelog)
         
-## [2026-04-30] - Migração das Opções de Hostname do Keycloak v1 para v2
+## [2026-04-30] - Remoção de KC_HOSTNAME_STRICT Redundante (Keycloak v2)
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Removida a variável `KC_HOSTNAME_STRICT=false` da seção `environment` do serviço `keycloak`. A variável tinha sido migrada da v1 (`KC_HOSTNAME_STRICT_HTTPS`) mas permanecia gerando o WARN `kc.spi-hostname-v2-hostname-strict will be ignored during build time`. O próprio Keycloak emite INFO explícito: *"If hostname is specified, hostname-strict is effectively ignored"*, confirmando que a opção é no-op quando `KC_HOSTNAME` está definido.
+
+### Causa Raiz:
+No provider de hostname v2 do Keycloak 26, a opção `hostname-strict` controla se o Keycloak rejeita requisições com hostname diferente do configurado. Porém, quando `KC_HOSTNAME` está explicitamente definido, o provider v2 aplica a restrição de hostname implicitamente, tornando `hostname-strict` irrelevante. Manter `KC_HOSTNAME_STRICT=false` além de redundante gerava um WARN de runtime-option-during-build-time em cada inicialização.
+
+### Contexto sobre os WARNs de hostname-admin e hostname remanescentes:
+`KC_HOSTNAME` e `KC_HOSTNAME_ADMIN` continuam gerando `WARN: runtime options ignored during build time` — esse comportamento é **inerente ao modo `start-dev`**, que executa build e start em uma única fase, e não pode ser eliminado sem substituir `start-dev` por um fluxo `kc.sh build` + `kc.sh start --optimized` com imagem customizada. O servidor inicia corretamente e as opções são aplicadas em runtime; os WARNs são cosméticos.
+
+---
 
 ### Arquivos Modificados:
 - `docker-compose.yaml`: Substituídas as variáveis de ambiente obsoletas da API v1 do hostname provider do Keycloak (`KC_HOSTNAME_URL`, `KC_HOSTNAME_ADMIN_URL`, `KC_HOSTNAME_STRICT_HTTPS`) pelas equivalentes v2 (`KC_HOSTNAME`, `KC_HOSTNAME_ADMIN`). O path `/keycloak` foi removido dos valores, pois o Keycloak v2 constrói a URL completa combinando `KC_HOSTNAME` com `KC_HTTP_RELATIVE_PATH` automaticamente.

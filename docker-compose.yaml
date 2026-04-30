@@ -140,7 +140,8 @@ services:
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
-      - KC_HOSTNAME_STRICT=false
+      # KC_HOSTNAME_STRICT removida: o provider v2 ignora hostname-strict quando
+      # KC_HOSTNAME está definido (INFO: "hostname-strict is effectively ignored").
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
