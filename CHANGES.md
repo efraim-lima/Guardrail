@@ -1,38 +1,5 @@
 # Registro de Alterações (Changelog)
 
-## [2026-04-30] - Simplificação Radical do Boot da Stack (Sem Fluxo Interativo Complexo)
-
-### Arquivos Modificados:
-- `setup.sh`: Reescrito para um fluxo mínimo e direto, removendo etapas em fases, pausas interativas de criação de usuário e coleta de client secret, validações redundantes e lógica de teardown complexa. O script agora executa apenas: validação de dependências, criação/carregamento de `.env`, configuração de usuário/senha do admin Keycloak, ajustes mínimos de ambiente, geração de certificado SSL (se ausente) e `docker compose up -d --build` para subir toda a stack.
-- `docker-compose.yaml`: Removido o bloco `profiles: [secure]` do serviço `oauth2-proxy`, permitindo que o serviço suba no fluxo padrão de `docker compose up` junto com os demais componentes.
-
-### Causa Raiz:
-O fluxo anterior estava superdimensionado para o objetivo operacional imediato: levantar todos os serviços com o mínimo de intervenção. A dependência de fases e prompts manuais adicionais (especialmente para `oauth2-proxy`) aumentava a fricção e dificultava recuperação rápida quando a aplicação não carregava. A nova abordagem privilegia simplicidade operacional e previsibilidade: apenas usuário/senha do Keycloak são solicitados, e todo o restante sobe automaticamente via Docker.
-
----
-
-## [2026-04-30] - Generalização de CIDRs Confiáveis no OAuth2-Proxy
-
-### Arquivos Modificados:
-- `docker-compose.yaml`: Substituída a configuração única `--trusted-proxy-ip` por três entradas parametrizáveis (`OAUTH2_PROXY_TRUSTED_PROXY_IP_1`, `_2`, `_3`) com valores padrão nas faixas privadas RFC1918 (`172.16.0.0/12`, `10.0.0.0/8`, `192.168.0.0/16`).
-- `env.example`: Removida a variável única `OAUTH2_PROXY_TRUSTED_PROXY_IP` e adicionadas três variáveis separadas para acomodar topologias distintas em máquina local, VPS e redes customizadas.
-
-### Causa Raiz:
-A abordagem inicial com um único CIDR fixo favorecia ambientes Docker com subnet padrão em `172.16.0.0/12`, porém podia tornar-se frágil em cenários com bridge customizada, VPC em `10.0.0.0/8` ou redes locais em `192.168.0.0/16`. A nova configuração preserva o endurecimento de segurança (evitando confiança global em `0.0.0.0/0`) e amplia a portabilidade entre ambientes heterogêneos sem exigir alterações no compose base.
-
----
-
-## [2026-04-30] - Endurecimento de Confiança de Proxy no OAuth2-Proxy
-
-### Arquivos Modificados:
-- `docker-compose.yaml`: Adicionado `--trusted-proxy-ip=${OAUTH2_PROXY_TRUSTED_PROXY_IP:-172.16.0.0/12}` no serviço `oauth2-proxy`, mantendo `--reverse-proxy=true`. A mudança elimina o alerta de segurança que confiava implicitamente em `X-Forwarded-*` de qualquer origem (`0.0.0.0/0`, `::/0`).
-- `env.example`: Adicionada a variável `OAUTH2_PROXY_TRUSTED_PROXY_IP` com valor padrão `172.16.0.0/12`, cobrindo as sub-redes bridge comuns do Docker em ambiente local.
-
-### Causa Raiz:
-Após habilitar `--reverse-proxy=true`, o oauth2-proxy passou a emitir warning de segurança por ausência de CIDRs confiáveis explícitos para os headers `X-Forwarded-*`. Sem esse filtro, qualquer origem poderia, em tese, injetar cabeçalhos de encaminhamento forjados. O ajuste aplica princípio de menor privilégio, limitando a confiança às redes privadas usadas pelo proxy reverso interno (Nginx via Docker bridge).
-
----
-
 ## [2026-04-30] - Eliminação de WARNs de Hostname no Keycloak e Ajustes de Callback OIDC
 
 ### Arquivos Modificados:

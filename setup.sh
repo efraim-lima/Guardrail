@@ -109,8 +109,8 @@ configure_keycloak_credentials() {
     upsert_env "KEYCLOAK_ADMIN" "$current_user"
     upsert_env "KEYCLOAK_ADMIN_PASSWORD" "$current_pass"
 
-    # Mantem secret padrao para eliminar configuracao adicional.
-    upsert_env "OAUTH2_PROXY_CLIENT_SECRET" "${OAUTH2_PROXY_CLIENT_SECRET:-$DEFAULT_CLIENT_SECRET}"
+    # Forca o secret padrao que bate com o realm importado (config/keycloak/realm-agentk.json).
+    upsert_env "OAUTH2_PROXY_CLIENT_SECRET" "$DEFAULT_CLIENT_SECRET"
 
     log_ok "Credenciais do Keycloak atualizadas no .env"
 }
