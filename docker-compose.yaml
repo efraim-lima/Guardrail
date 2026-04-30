@@ -204,6 +204,8 @@ services:
       # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
       - --cookie-secure=true
       - --cookie-samesite=lax
+      # Mantem cookie de sessao minimo para reduzir tamanho de headers no callback.
+      - --session-cookie-minimal=true
       # Evita falha de callback quando o usuario do Keycloak nao tem email_verified=true.
       - --insecure-oidc-allow-unverified-email=true
       # Evita fluxo OIDC paralelo para favicon, reduzindo callbacks redundantes.

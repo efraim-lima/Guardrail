@@ -1,5 +1,16 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
+
+### Arquivos Modificados:
+- `nginx/nginx.conf`: Aumentados buffers de proxy nas rotas `location = /oauth2/callback` e `location /oauth2/` (`proxy_buffer_size 64k`, `proxy_buffers 8 64k`, `proxy_busy_buffers_size 128k`) para suportar cabeçalhos de resposta maiores vindos do `oauth2-proxy`.
+- `docker-compose.yaml`: Adicionado `--session-cookie-minimal=true` no serviço `oauth2-proxy` para reduzir o tamanho do cookie de sessão e, consequentemente, o volume de `Set-Cookie` no callback OIDC.
+
+### Causa Raiz:
+Durante o callback OIDC, o Nginx recebia resposta do `oauth2-proxy` com cabeçalhos maiores que o buffer padrão, gerando o erro `upstream sent too big header while reading response header from upstream`. Isso disparava redirecionamentos repetidos para login e novos callbacks, produzindo loop de autenticação. A combinação de buffers maiores no Nginx com sessão mínima no `oauth2-proxy` elimina o gargalo estrutural e estabiliza o login sem intervenção manual.
+
+---
+
 ## [2026-04-30] - Fallback Automático no Callback OAuth2 e Mensagem de Indisponibilidade
 
 ### Arquivos Modificados:
