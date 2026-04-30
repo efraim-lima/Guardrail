@@ -22,7 +22,7 @@ public class SecurityClassifier {
 
     private static final String DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/api/generate";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
-    private static final int DEFAULT_OLLAMA_TIMEOUT = 60;
+    private static final int DEFAULT_OLLAMA_TIMEOUT = 120;
 
     private final HttpClient httpClient;
     private final String ollamaUrl;

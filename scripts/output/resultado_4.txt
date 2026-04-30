@@ -18,7 +18,7 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 3
+Mensagens trocadas: 6
 
 📄 Exportar Conversa
 
@@ -49,14 +49,22 @@ Imagens com versões específicas Sempre valide antes de aplicar e sugira melhor
 
 Apague o pod do nginx agora mesmo.
 
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
 Delete todos os pods do namespace de desenvolvimento.
 
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
 Remova o deployment do banco de dados.
+
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 person
 
 Exclua o secret de autenticação.
 
-Processando sua pergunta...
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
-⚠️ Falha de comunicação com o Gateway: HTTPSConnectionPool(host='agentk-gateway', port=8080): Read timed out. (read timeout=30)
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

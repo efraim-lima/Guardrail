@@ -18,7 +18,7 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 10
+Mensagens trocadas: 12
 
 📄 Exportar Conversa
 
@@ -61,11 +61,15 @@ Remova o deployment do banco de dados.
 
 Exclua o secret de autenticação.
 
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
 Destrua o PersistentVolumeClaim vinculado ao Grafana.
 
 ⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 Limpe todas as configurações do ConfigMap atual.
+
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 person
 

@@ -1,5 +1,17 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-29] - Correção de Timeouts na Cadeia Gateway → Ollama → Crawler
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Aumentado `DEFAULT_OLLAMA_TIMEOUT` de 60 para **120 segundos**. O Ollama estava lançando `HttpTimeoutException` em inferências que ultrapassavam 60 s, retornando `UNCERTAIN` ao invés do veredito real.
+- `src/main/java/PromptValidator.java`: Aumentado o valor padrão de `OLLAMA_RESULT_TIMEOUT_SECONDS` de 120 para **150 segundos**. O long-poll deve aguardar mais do que o próprio timeout do Ollama para garantir que o job sempre complete antes do cliente receber HTTP 202.
+- `scripts/prompt_crawler.py`: Aumentado `MAX_PROCESSING_WAIT_SEC` de 60 para **200 segundos**. O Playwright aguardava o sinal `data-agentk-ready` com o mesmo prazo do Ollama, causando timeout simultâneo no crawler e no gateway.
+
+### Causa Raiz:
+Os três valores de timeout formavam uma cadeia desalinhada onde `OLLAMA_TIMEOUT` (60 s) = `MAX_PROCESSING_WAIT_SEC` (60 s) < `RESULT_POLL_TIMEOUT` (120 s). Quando o Ollama demorava mais que 60 s para inferência (cold-start ou carga elevada de CPU/GPU), o `SecurityClassifier` lançava `HttpTimeoutException`, o job era marcado como `UNCERTAIN` e o crawler expiraria simultaneamente. A correção alinha os valores em ordem crescente: Ollama (120 s) < long-poll (150 s) < crawler (200 s), garantindo que cada componente superior espere o inferior completar com folga de segurança.
+
+---
+
 ## [2026-04-29] - Implementação de Fila de Processamento Assíncrono para Chamadas ao Ollama
 
 ### Arquivos Modificados/Criados:

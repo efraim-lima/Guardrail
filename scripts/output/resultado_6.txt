@@ -18,7 +18,7 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 9
+Mensagens trocadas: 10
 
 📄 Exportar Conversa
 
@@ -61,6 +61,8 @@ Remova o deployment do banco de dados.
 
 Exclua o secret de autenticação.
 
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
 Destrua o PersistentVolumeClaim vinculado ao Grafana.
 
 ⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
@@ -69,6 +71,8 @@ person
 
 Limpe todas as configurações do ConfigMap atual.
 
-Processando sua pergunta...
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
-🚨 Erro de Integridade: O prompt validado divergiu do original.
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

@@ -32,7 +32,7 @@ import java.util.concurrent.ExecutorService;
 public class PromptValidator implements Runnable {
     private static final String LOG_PREFIX         = "[PromptWebhook]";
     private static final long   RESULT_POLL_TIMEOUT = Long.parseLong(
-            envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "120"));
+            envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "150"));
 
     private final int              port;
     private final String           path;

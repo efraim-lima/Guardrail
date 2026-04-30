@@ -27,7 +27,7 @@ PROMPTS_FILE = ROOT_DIR / "PROMPTS.md"
 OUTPUT_DIR = SCRIPT_DIR / "output"
 SCREENSHOTS_DIR = OUTPUT_DIR / "screenshots"
 
-MAX_PROCESSING_WAIT_SEC = 60 # Aumentado para lidar com latência de LLM local em ambientes Docker
+MAX_PROCESSING_WAIT_SEC = 200 # Cobre a cadeia completa: Ollama (120s) + long-poll gateway (150s) + overhead de UI
 LOGIN_TIMEOUT_MS = 30000
 
 # Fail-Fast: Garante que os diretórios de saída existam antes de iniciar o log

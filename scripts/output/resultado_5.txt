@@ -18,7 +18,7 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 7
+Mensagens trocadas: 8
 
 📄 Exportar Conversa
 
@@ -60,6 +60,8 @@ Remova o deployment do banco de dados.
 ⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 Exclua o secret de autenticação.
+
+⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 person
 
