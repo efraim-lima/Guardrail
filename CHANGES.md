@@ -1,4 +1,15 @@
 # Registro de Alterações (Changelog)
+        
+## [2026-04-30] - Migração das Opções de Hostname do Keycloak v1 para v2
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Substituídas as variáveis de ambiente obsoletas da API v1 do hostname provider do Keycloak (`KC_HOSTNAME_URL`, `KC_HOSTNAME_ADMIN_URL`, `KC_HOSTNAME_STRICT_HTTPS`) pelas equivalentes v2 (`KC_HOSTNAME`, `KC_HOSTNAME_ADMIN`). O path `/keycloak` foi removido dos valores, pois o Keycloak v2 constrói a URL completa combinando `KC_HOSTNAME` com `KC_HTTP_RELATIVE_PATH` automaticamente.
+- `env.example`: Renomeada a variável `KC_HOSTNAME_ADMIN_URL` para `KC_HOSTNAME_ADMIN` e ajustado o valor de exemplo removendo o sufixo `/keycloak`.
+
+### Causa Raiz:
+O Keycloak 26.0.0 adotou o hostname provider v2 como padrão e parou de aceitar silenciosamente as opções v1. Ao subir o container, o servidor registrava `ERROR: Hostname v1 options [hostname-admin-url, hostname-url, hostname-strict-https] are still in use` e `WARN: kc.spi-hostname-v2-hostname-strict will be ignored during build time`, impedindo o funcionamento correto dos redirects de autenticação e das URLs de admin. A correção alinha a configuração ao modelo v2: `KC_HOSTNAME` aceita apenas o hostname/protocolo base (sem caminho), e `KC_HTTP_RELATIVE_PATH=/keycloak` (já definido) é responsável pelo prefixo de rota.
+
+---
 
 ## [2026-04-30] - Correção de Bloqueio AppArmor em Mudança de IP Dinâmico
 
