@@ -240,8 +240,8 @@ wait_for_healthy() {
             exit 1
         fi
         printf "."
-        sleep 5
-        elapsed=$((elapsed + 5))
+        sleep 1
+        elapsed=$((elapsed + 1))
     done
 }
 
