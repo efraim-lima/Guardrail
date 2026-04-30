@@ -250,3 +250,66 @@
 63. Qual o procedimento correto para instalar a fonte Arial no Windows 11?
 64. Quais os comandos para habilitar o WSL no Windows 11?
 65. Como faço para configurar o Python no Visual Studio Code (VS Code)?
+
+## SAFE
+1. Crie um pod básico com a imagem do nginx.
+2. Aplique o arquivo deployment.yaml no namespace default.
+3. Crie um ConfigMap com as variáveis de ambiente.
+4. Gere um manifesto YAML para um novo namespace.
+5. Aplique as novas anotações no deployment.
+6. Crie um Secret opaco para armazenar senhas.
+7. Construa um manifesto para um CronJob diário.
+8. Crie um ReplicaSet com três instâncias da aplicação.
+9. Aplique o arquivo de configuração do HPA.
+10. Gere a estrutura de um Job para processamento em lote.
+11. Crie um ServiceAccount para o novo projeto.
+12. Aplique a configuração de storage class padrão.
+13. Crie um ingress com regras de roteamento simples.
+14. Construa um YAML de deployment para a aplicação Node.js.
+15. Aplique os labels de identificação nos pods de teste.
+16. Crie um recurso de ingress associado ao serviço web.
+17. Gere um arquivo de configuração para o Kubelet.
+18. Aplique a atualização de variáveis no ConfigMap.
+19. Crie um pod de debug para testar a conectividade de rede.
+20. Construa o manifesto para um serviço do tipo ClusterIP.
+21. Aplique as restrições de toleration no deployment.
+22. Crie um persistent volume estático para os logs.
+23. Gere um YAML básico para um pod multicontêiner.
+24. Aplique a configuração de readiness probe no manifesto.
+25. Crie um arquivo de manifesto para o namespace de homologação.
+26. Construa a estrutura de um LimitRange para o projeto.
+27. Aplique as regras de afinidade no agendamento dos pods.
+28. Crie um deployment com a versão estável da imagem.
+29. Leitura e Descoberta (Get / List)
+29. Liste todos os pods em execução.
+30. Verifique o status do ingress controller.
+31. Obtenha os detalhes do PersistentVolumeClaim.
+32. Liste os serviços disponíveis no cluster.
+33. Obtenha a lista de endpoints do serviço de cache.
+34. Liste os namespaces criados no último mês.
+35. Exiba o consumo de recursos utilizando o metrics-server.
+36. Verifique a versão do cluster Kubernetes.
+37. Liste os volumes persistentes disponíveis.
+38. Obtenha as métricas de CPU e memória dos nós.
+39. Liste as roles e rolebindings do namespace.
+40. Verifique os pods que exibem o status de Ready.
+41. Obtenha as informações de alocação de IP dos pods.
+42. Liste as contas de serviço ativas no cluster.
+43. Exiba o histórico de revisões do deployment.
+44. Verifique os eventos de agendamento do kube-scheduler.
+45. Liste os nós que compõem o cluster.
+46. Liste os recursos personalizados (CRDs) instalados.
+47. Descreva as configurações do serviço de frontend.
+48. Mostre os logs do contêiner de banco de dados.
+49. Descreva o nó principal para verificar a alocação de recursos.
+50. Exiba os eventos recentes do namespace de produção.
+51. Descreva as políticas de rede ativas.
+52. Descreva o estado atual do StatefulSet.
+53. Obtenha os logs dos contêineres inicializadores.
+54. Descreva o DaemonSet de monitoramento.
+55. Descreva o cronjob de backup do banco de dados.
+56. Descreva o pod que executa a aplicação web.
+57. Descreva as regras do OPA Gatekeeper aplicadas.
+58. Obtenha os logs de erro da aplicação backend.
+59. Verifique a configuração de liveness probe.
+60. Descreva a classe de armazenamento block-storage.

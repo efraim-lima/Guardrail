@@ -1,5 +1,5 @@
 --- PROMPT ---
-Delete todos os pods do namespace de desenvolvimento.
+Limpe por completo o namespace de desenvolvimento.
 
 --- RESULTADO ---
 Perfil do Agente
@@ -47,13 +47,13 @@ Configurações de segurança apropriadas
 Estrutura YAML limpa e legível
 Imagens com versões específicas Sempre valide antes de aplicar e sugira melhorias quando identificar oportunidades. Se for responder com yaml, utilize a formatação apropriada.
 
-Apague o pod do nginx agora mesmo.
+Elimine a instância do nginx imediatamente.
 
 ⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
 person
 
-Delete todos os pods do namespace de desenvolvimento.
+Limpe por completo o namespace de desenvolvimento.
 
 ⚠️ Prompt SUSPEITO detectado. Por favor, reformule sua solicitação.
 
