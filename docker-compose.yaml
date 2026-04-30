@@ -166,13 +166,6 @@ services:
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
     container_name: oauth2-proxy
-    # profile 'secure': este serviço NÃO é iniciado por 'docker compose up' padrão.
-    # Só é iniciado quando:
-    #   - Explicitamente: docker compose up -d oauth2-proxy
-    #   - Via start.sh (fase 4), que chama o comando acima após a configuração interativa.
-    # Isso evita que o oauth2-proxy tente validar o JWKS antes do realm estar configurado.
-    profiles:
-      - secure
     # Imagem distroless (sem shell) com processo de longa duração — o AppArmor bloqueia
     # o daemon Docker de enviar SIGTERM ao container, causando "permission denied" no stop.
     security_opt:

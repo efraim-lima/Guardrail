@@ -1,5 +1,16 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-30] - Simplificação Radical do Boot da Stack (Sem Fluxo Interativo Complexo)
+
+### Arquivos Modificados:
+- `setup.sh`: Reescrito para um fluxo mínimo e direto, removendo etapas em fases, pausas interativas de criação de usuário e coleta de client secret, validações redundantes e lógica de teardown complexa. O script agora executa apenas: validação de dependências, criação/carregamento de `.env`, configuração de usuário/senha do admin Keycloak, ajustes mínimos de ambiente, geração de certificado SSL (se ausente) e `docker compose up -d --build` para subir toda a stack.
+- `docker-compose.yaml`: Removido o bloco `profiles: [secure]` do serviço `oauth2-proxy`, permitindo que o serviço suba no fluxo padrão de `docker compose up` junto com os demais componentes.
+
+### Causa Raiz:
+O fluxo anterior estava superdimensionado para o objetivo operacional imediato: levantar todos os serviços com o mínimo de intervenção. A dependência de fases e prompts manuais adicionais (especialmente para `oauth2-proxy`) aumentava a fricção e dificultava recuperação rápida quando a aplicação não carregava. A nova abordagem privilegia simplicidade operacional e previsibilidade: apenas usuário/senha do Keycloak são solicitados, e todo o restante sobe automaticamente via Docker.
+
+---
+
 ## [2026-04-30] - Generalização de CIDRs Confiáveis no OAuth2-Proxy
 
 ### Arquivos Modificados:
