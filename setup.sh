@@ -122,7 +122,7 @@ sync_env_ip() {
     upsert_env "AGENTK_HOST_IP" "$detected_ip"
     
     # Priorizamos agentk.local para todas as URLs publicas
-    upsert_env "KC_HOSTNAME_URL" "https://agentk.local/keycloak"
+    upsert_env "KC_HOSTNAME" "https://agentk.local/keycloak"
     upsert_env "KC_HOSTNAME_ADMIN_URL" "https://agentk.local/keycloak"
 
     log_info "IP detectado automaticamente: ${detected_ip}"
@@ -214,7 +214,7 @@ ensure_env() {
 # ---------------------------------------------------------------------------
 wait_for_healthy() {
     local container="$1"
-    local max_wait="${2:-10}"
+    local max_wait="${2:-2}"
     local elapsed=0
     log_info "Aguardando ${container} ficar healthy (max ${max_wait}s)..."
     while true; do
