@@ -1,5 +1,16 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-30] - Estabilização de Callback OAuth2 Sem Interação Manual
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Adicionados `--insecure-oidc-allow-unverified-email=true` e `--skip-auth-route=GET=^/favicon\.ico$` no serviço `oauth2-proxy` para eliminar falhas de callback quando `email_verified=false` e reduzir fluxos OIDC paralelos gerados por requisições automáticas de favicon.
+- `nginx/nginx.conf`: Adicionada rota explícita `location = /favicon.ico { return 204; }` para impedir que o favicon dispare redirecionamentos de autenticação.
+
+### Causa Raiz:
+Os logs do `oauth2-proxy` mostravam duas causas diretas de HTTP 500 no callback: (1) rejeição de usuários com e-mail não verificado no `id_token`; (2) reuso de authorization code (`invalid_grant: Code not valid`) após callbacks redundantes gerados por navegação paralela e requisições auxiliares. As mudanças removem a necessidade de ajuste manual de usuário no Keycloak e reduzem tentativas duplicadas de callback, preservando o objetivo de inicialização automática da autenticação.
+
+---
+
 ## [2026-04-30] - Eliminação de WARNs de Hostname no Keycloak e Ajustes de Callback OIDC
 
 ### Arquivos Modificados:

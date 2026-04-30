@@ -204,6 +204,10 @@ services:
       # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
       - --cookie-secure=true
       - --cookie-samesite=lax
+      # Evita falha de callback quando o usuario do Keycloak nao tem email_verified=true.
+      - --insecure-oidc-allow-unverified-email=true
+      # Evita fluxo OIDC paralelo para favicon, reduzindo callbacks redundantes.
+      - --skip-auth-route=GET=^/favicon\.ico$
       - --email-domain=*
       - --skip-provider-button=true
       - --oidc-extra-audience=${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}
