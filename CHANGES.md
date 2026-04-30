@@ -1,5 +1,17 @@
 # Registro de Alterações (Changelog)
 
+## [2026-04-30] - Fallback Automático no Callback OAuth2 e Mensagem de Indisponibilidade
+
+### Arquivos Modificados:
+- `nginx/nginx.conf`: Criado bloco `location = /oauth2/callback` com proxy dedicado ao `oauth2-proxy` e fallback automático `error_page 500 502 503 504 =302 /oauth2/sign_in?rd=/`. A alteração evita exibição de erro 500 ao usuário quando ocorre `invalid_grant` por callback duplicado e força um novo ciclo de login sem intervenção manual.
+- `nginx/nginx.conf`: Criado bloco `location /oauth2/` para encaminhar endpoints internos do oauth2-proxy (`/oauth2/sign_in`, `/oauth2/static`, etc.) com rota explícita.
+- `nginx/nginx.conf`: Atualizada a página `@auth_unavailable`, removendo a mensagem antiga de "configuração pendente" e substituindo por aviso genérico de indisponibilidade temporária da autenticação.
+
+### Causa Raiz:
+Os logs do oauth2-proxy mostravam alternância entre `AuthSuccess` e falhas posteriores `invalid_grant: Code not valid`, comportamento típico de callback repetido para um authorization code já consumido. Além disso, a página de fallback do Nginx mantinha texto legado que induzia diagnóstico incorreto de setup incompleto, mesmo com serviços já em execução. O novo fluxo torna a autenticação idempotente para o usuário final: em falha transitória de callback, o sistema redireciona automaticamente para novo login.
+
+---
+
 ## [2026-04-30] - Estabilização de Callback OAuth2 Sem Interação Manual
 
 ### Arquivos Modificados:
