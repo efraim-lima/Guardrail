@@ -27,3 +27,11 @@
 2026-04-30 01:20:41,453 - [INFO] - Navegando para https://agentk.local...
 2026-04-30 01:21:11,562 - [ERROR] - Timeout na autenticação. Screenshot salva em: /home/efraim/Documents/GitHub/Guardrail/scripts/output/screenshots/auth_error.png
 2026-04-30 01:21:11,605 - [INFO] - Sessão do navegador encerrada.
+2026-04-30 01:44:43,951 - [INFO] - Carregados 298 prompts de /home/efraim/Documents/GitHub/Guardrail/PROMPTS.md
+2026-04-30 01:44:43,951 - [INFO] - Iniciando automação do AgentK Crawler...
+2026-04-30 01:44:44,445 - [INFO] - Sessão do navegador iniciada.
+2026-04-30 01:44:44,445 - [INFO] - Navegando para https://agentk.local...
+2026-04-30 01:51:09,362 - [ERROR] - Task was destroyed but it is pending!
+task: <Task pending name='Task-13' coro=<Browser.close() running at /home/efraim/Documents/GitHub/Guardrail/scripts/venv/lib/python3.12/site-packages/playwright/_impl/_browser.py:233> cb=[SyncBase._sync.<locals>.<lambda>() at /home/efraim/Documents/GitHub/Guardrail/scripts/venv/lib/python3.12/site-packages/playwright/_impl/_sync_base.py:111]>
+2026-04-30 01:51:09,362 - [ERROR] - Task was destroyed but it is pending!
+task: <Task pending name='Task-12' coro=<Page.wait_for_selector() done, defined at /home/efraim/Documents/GitHub/Guardrail/scripts/venv/lib/python3.12/site-packages/playwright/_impl/_page.py:412> wait_for=<Future pending cb=[Task.task_wakeup()]> cb=[SyncBase._sync.<locals>.<lambda>() at /home/efraim/Documents/GitHub/Guardrail/scripts/venv/lib/python3.12/site-packages/playwright/_impl/_sync_base.py:111, ProtocolCallback.__init__.<locals>.cb() at /home/efraim/Documents/GitHub/Guardrail/scripts/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:230]>

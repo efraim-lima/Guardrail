@@ -312,9 +312,12 @@ phase3_interactive_setup() {
     echo ""
 
     local is_placeholder=false
-    # "oauth2-proxy" (sem sufixo "-secret") é um valor inválido comum — o nome do cliente,
-    # não o secret. Tratado como placeholder para forçar redefinição.
-    if [[ -z "$current_secret" || "$current_secret" == "SEU_CLIENT_SECRET" || "$current_secret" == "oauth2-proxy-secret" || "$current_secret" == "oauth2-proxy" ]]; then
+    # Valores genuinamente inválidos: vazio, texto de exemplo do env.example, ou
+    # "oauth2-proxy" (nome do cliente — confundido com o secret pelo usuário).
+    # NOTA: "oauth2-proxy-secret" NÃO está aqui — é o default correto e válido.
+    # Tratá-lo como placeholder causava reescrita desnecessária e falha silenciosa
+    # quando o 'read' era interrompido por set -e em contextos sudo sem TTY pleno.
+    if [[ -z "$current_secret" || "$current_secret" == "SEU_CLIENT_SECRET" || "$current_secret" == "oauth2-proxy" ]]; then
         is_placeholder=true
     fi
 
@@ -326,7 +329,11 @@ phase3_interactive_setup() {
         echo -e " ou cole um secret personalizado copiado do Keycloak:"
     fi
     echo ""
+    # set +e: 'read' retorna exit code 1 em EOF (sudo sem TTY pleno, pipe, etc.).
+    # Com set -e ativo, isso terminaria o script antes de gravar o secret.
+    set +e
     read -r -p " -> Client Secret: " input_secret
+    set -e
     echo ""
 
     if [[ -n "$input_secret" ]]; then
@@ -344,7 +351,9 @@ phase3_interactive_setup() {
     echo ""
     echo -e " Pressione ${BOLD}[ENTER]${NC} quando tiver concluido a criacao do usuario"
     echo -e " para ativar o nginx e fechar o acesso publico..."
+    set +e
     read -r -p " -> Pronto? [ENTER para continuar] " _
+    set -e
     echo ""
 }
 
