@@ -55,6 +55,10 @@ public class SecurityClassifier {
      * @return SAFE, UNSAFE, SUSPECT ou UNCERTAIN
      */
     public String classify(String userPrompt) {
+        return classify(userPrompt, false);
+    }
+
+    public String classify(String userPrompt, boolean isTestFlow) {
         if (userPrompt == null || userPrompt.trim().isEmpty()) {
             return "UNCERTAIN";
         }
@@ -78,7 +82,12 @@ public class SecurityClassifier {
             }
         }
         if (bestScore >= 0.80) {
-            log("Classificado por similaridade (" + String.format("%.2f", bestScore) + ") → " + bestCategory);
+            String logMsg = "Classificado por similaridade (" + String.format("%.2f", bestScore) + ") → " + bestCategory;
+            if (isTestFlow) {
+                log("[TEST_FLOW] " + logMsg);
+            } else {
+                log(logMsg);
+            }
             cache.put(normalized, bestCategory);
             return bestCategory;
         }
@@ -88,6 +97,11 @@ public class SecurityClassifier {
             String aiPrompt = buildAIPrompt(userPrompt);
             String llmResponse = queryLocalLLM(aiPrompt);
             String verdict = evaluateResponse(llmResponse);
+            
+            if (isTestFlow) {
+                log("[TEST_FLOW] Classificado via Ollama → " + verdict);
+            }
+            
             cache.put(normalized, verdict);
             return verdict;
         } catch (Exception e) {

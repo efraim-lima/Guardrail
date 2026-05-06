@@ -144,13 +144,20 @@ public class PromptValidator implements Runnable {
                 }
 
                 String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
-                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp,
+                String testFlowHeader = exchange.getRequestHeaders().getFirst("X-Test-Flow");
+                boolean isTestFlow = "true".equalsIgnoreCase(testFlowHeader);
+
+                if (isTestFlow) {
+                    AuditLogger.logTestVerdict(prompt, "RECEIVED", sourceIp);
+                } else {
+                    AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp,
                         "snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
+                }
 
                 try {
-                    String jobId = jobQueue.submit(prompt);
+                    String jobId = jobQueue.submit(prompt, isTestFlow);
                     AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "ACCEPTED", sourceIp,
-                            "prompt_length=" + prompt.length());
+                            "prompt_length=" + prompt.length() + (isTestFlow ? ", mode=TEST" : ""));
                     writeJson(exchange, 202,
                             "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                 } catch (IllegalStateException e) {
@@ -204,8 +211,13 @@ public class PromptValidator implements Runnable {
 
                 switch (result.status) {
                     case DONE:
-                        AuditLogger.log("anonymous", "JOB_RESULT", jobId, result.verdict,
+                        if (result.isTestFlow) {
+                            AuditLogger.logTestVerdict(result.prompt, result.verdict, sourceIp);
+                        } else {
+                            AuditLogger.log("anonymous", "JOB_RESULT", jobId, result.verdict,
                                 sourceIp, "status=DONE");
+                        }
+                        
                         writeJson(exchange, 200,
                                 "{\"job_id\":\""   + escapeJson(jobId)         + "\","
                                 + "\"prompt\":\""  + escapeJson(result.prompt)  + "\","

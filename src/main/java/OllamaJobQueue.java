@@ -42,11 +42,13 @@ public class OllamaJobQueue {
         final String                   prompt;
         final CompletableFuture<String> future;
         final long                     createdAtMs;
+        final boolean                  isTestFlow;
 
-        JobEntry(String prompt, CompletableFuture<String> future) {
+        JobEntry(String prompt, CompletableFuture<String> future, boolean isTestFlow) {
             this.prompt      = prompt;
             this.future      = future;
             this.createdAtMs = System.currentTimeMillis();
+            this.isTestFlow  = isTestFlow;
         }
     }
 
@@ -60,11 +62,13 @@ public class OllamaJobQueue {
         public final AwaitStatus status;
         public final String      verdict;
         public final String      prompt;
+        public final boolean     isTestFlow;
 
-        AwaitResult(AwaitStatus status, String verdict, String prompt) {
-            this.status  = status;
-            this.verdict = verdict;
-            this.prompt  = prompt;
+        AwaitResult(AwaitStatus status, String verdict, String prompt, boolean isTestFlow) {
+            this.status     = status;
+            this.verdict    = verdict;
+            this.prompt     = prompt;
+            this.isTestFlow = isTestFlow;
         }
     }
 
@@ -111,6 +115,10 @@ public class OllamaJobQueue {
      * @throws IllegalStateException quando a fila atingiu capacidade máxima
      */
     public String submit(String prompt) {
+        return submit(prompt, false);
+    }
+
+    public String submit(String prompt, boolean isTestFlow) {
         if (!semaphore.tryAcquire()) {
             throw new IllegalStateException("Fila saturada — tente novamente em instantes.");
         }
@@ -119,13 +127,13 @@ public class OllamaJobQueue {
 
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
             try {
-                return classifier.classify(prompt);
+                return classifier.classify(prompt, isTestFlow);
             } finally {
                 semaphore.release();
             }
         }, workers);
 
-        jobs.put(jobId, new JobEntry(prompt, future));
+        jobs.put(jobId, new JobEntry(prompt, future, isTestFlow));
 
         // Agendamento de remoção automática ao expirar o TTL (evita vazamento de memória)
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
@@ -152,19 +160,19 @@ public class OllamaJobQueue {
     public AwaitResult awaitResult(String jobId, long timeoutSeconds) throws InterruptedException {
         JobEntry entry = jobs.get(jobId);
         if (entry == null) {
-            return new AwaitResult(AwaitStatus.NOT_FOUND, null, null);
+            return new AwaitResult(AwaitStatus.NOT_FOUND, null, null, false);
         }
 
         try {
             String verdict = entry.future.get(timeoutSeconds, TimeUnit.SECONDS);
-            return new AwaitResult(AwaitStatus.DONE, verdict, entry.prompt);
+            return new AwaitResult(AwaitStatus.DONE, verdict, entry.prompt, entry.isTestFlow);
         } catch (TimeoutException e) {
             // Job ainda em processamento: cliente deve retentar o long-poll
-            return new AwaitResult(AwaitStatus.PROCESSING, null, null);
+            return new AwaitResult(AwaitStatus.PROCESSING, null, null, entry.isTestFlow);
         } catch (ExecutionException e) {
             logError("Falha no job " + jobId + ": "
                     + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-            return new AwaitResult(AwaitStatus.DONE, "UNCERTAIN", entry.prompt);
+            return new AwaitResult(AwaitStatus.DONE, "UNCERTAIN", entry.prompt, entry.isTestFlow);
         }
     }
 
