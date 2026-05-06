@@ -10,7 +10,7 @@
 - `src/main/java/Main.java` (**MODIFICADO**): Adicionada sinalização visual no startup do serviço indicando a disponibilidade do fluxo secundário.
 - **build.gradle** (MODIFICADO): Adicionada dependência da biblioteca **Gson** para manipulação robusta de JSON, necessária para o processamento de grandes arrays de embeddings gerados pelo Ollama.
 - **proguard-rules.pro** (MODIFICADO): Adicionadas regras específicas para manter a biblioteca Gson e as classes internas de modelo JSON (`SecurityClassifier$**`) durante o processo de ofuscação e compactação binária.
-- **SecurityClassifier.java** (MODIFICADO): Corrigidos erros de compilação relacionados a construtores e sobrecargas de métodos. Implementado o **Aprendizado Incremental**, permitindo reaproveitamento total de vetores via `BASE.embeddings.json` e integração com o endpoint de batch do Ollama.
+- **SecurityClassifier.java** (MODIFICADO): Melhorada drasticamente a precisão da classificação. Introduzida a persona de "Auditor Estrito", ajuste nos pesos de similaridade (60% semântica / 40% heurística) e instruções explícitas para tratar comandos de destruição de infraestrutura como `SUSPECT` ou `RISKY`.
 
 ### Descrição Técnica:
 A arquitetura foi temporariamente estendida para viabilizar a coleta de dados de desempenho e precisão do sensor de segurança (Guardrail) sem incorrer em custos ou latências de processamento da IA externa. O novo "Fluxo Secundário" estabelece um canal direto entre a interface de usuário e o classificador local (Ollama). 
