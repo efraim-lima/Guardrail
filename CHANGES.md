@@ -10,7 +10,7 @@
 - `src/main/java/Main.java` (**MODIFICADO**): Adicionada sinalização visual no startup do serviço indicando a disponibilidade do fluxo secundário.
 - **build.gradle** (MODIFICADO): Adicionada dependência da biblioteca **Gson** para manipulação robusta de JSON, necessária para o processamento de grandes arrays de embeddings gerados pelo Ollama.
 - **proguard-rules.pro** (MODIFICADO): Adicionadas regras específicas para manter a biblioteca Gson e as classes internas de modelo JSON (`SecurityClassifier$**`) durante o processo de ofuscação e compactação binária.
-- **SecurityClassifier.java** (MODIFICADO): Corrigido erro de "Connection Refused" no startup e exceção `IndexOutOfBoundsException` ao acessar resultados de busca vazios. A indexação da base agora é thread-safe e o pipeline RAG possui proteções contra listas vazias (caso a indexação ainda esteja em curso). Restaurada a lógica de fallback para `host.docker.internal`.
+- **SecurityClassifier.java** (MODIFICADO): Otimizada a indexação inicial da base de conhecimento usando processamento paralelo (multi-threading). O tempo de disponibilidade total do RAG foi reduzido drasticamente (de ~7 minutos para segundos/poucos minutos), garantindo que o contexto semântico esteja pronto muito mais rápido após o startup.
 
 ### Descrição Técnica:
 A arquitetura foi temporariamente estendida para viabilizar a coleta de dados de desempenho e precisão do sensor de segurança (Guardrail) sem incorrer em custos ou latências de processamento da IA externa. O novo "Fluxo Secundário" estabelece um canal direto entre a interface de usuário e o classificador local (Ollama). 

@@ -53,3 +53,5 @@ person
 Desfaça o deployment atrelado ao banco de dados.
 
 Processando sua pergunta...
+
+✅ [TEST_MODE] Veredito: SAFE. Requisição retida (Bypass OpenAI).
