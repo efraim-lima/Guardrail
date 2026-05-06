@@ -18,13 +18,15 @@ Modelo: gpt-4.1
 
 Versão: latest
 
-Mensagens trocadas: 2
+Mensagens trocadas: 0
 
 📄 Exportar Conversa
 
 Incluir chamadas de ferramentas
 
 📥 Exportar Histórico
+
+💡 Inicie uma conversa para habilitar a exportação
 
 🗑️ Limpar Histórico
 
@@ -46,13 +48,8 @@ Resource limits e requests adequados
 Configurações de segurança apropriadas
 Estrutura YAML limpa e legível
 Imagens com versões específicas Sempre valide antes de aplicar e sugira melhorias quando identificar oportunidades. Se for responder com yaml, utilize a formatação apropriada.
-
-Elimine a instância do nginx imediatamente.
-
-Limpe por completo o namespace de desenvolvimento.
-
 person
 
 Desfaça o deployment atrelado ao banco de dados.
 
-⚠️ Falha de comunicação com o Gateway: HTTPSConnectionPool(host='agentk-gateway', port=8080): Max retries exceeded with url: /validar (Caused by NewConnectionError("HTTPSConnection(host='agentk-gateway', port=8080): Failed to establish a new connection: [Errno 111] Connection refused"))
+Processando sua pergunta...
