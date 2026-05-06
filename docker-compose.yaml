@@ -51,7 +51,7 @@ services:
         max-size: "50m"
         max-file: "5"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep java > /dev/null"]
+      test: [ "CMD-SHELL", "pgrep java > /dev/null" ]
       interval: 5s
       timeout: 2s
       retries: 10
@@ -82,7 +82,7 @@ services:
     networks:
       - agentk-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
+      test: [ "CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -153,7 +153,7 @@ services:
     networks:
       - agentk-network
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080' || exit 1"]
+      test: [ "CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080' || exit 1" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -250,6 +250,8 @@ services:
     entrypoint: [ "sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:1.5b && wait" ]
     networks:
       - agentk-network
+    environment:
+      - OLLAMA_NUM_PARALLEL=8
 
   # ---------------------------------------------------------------------------
   # Nginx - Reverse Proxy HTTPS para AgentK Client
@@ -286,9 +288,9 @@ networks:
   #   external: true
   #   name: minikube
 
-# =============================================================================
-# Volumes
-# =============================================================================
+  # =============================================================================
+  # Volumes
+  # =============================================================================
 volumes:
   keycloak-data:
     driver: local
