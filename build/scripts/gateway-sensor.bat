@@ -63,7 +63,7 @@ set CMD_LINE_ARGS=%*
 :execute
 @rem Setup the command line
 
-set CLASSPATH=%APP_HOME%\lib\gateway-sensor-1.0.0.jar;%APP_HOME%\lib\pcap4j-packetfactory-static-1.8.2.jar;%APP_HOME%\lib\pcap4j-core-1.8.2.jar;%APP_HOME%\lib\slf4j-simple-2.0.16.jar;%APP_HOME%\lib\bcpkix-jdk18on-1.78.1.jar;%APP_HOME%\lib\bcutil-jdk18on-1.78.1.jar;%APP_HOME%\lib\bcprov-jdk18on-1.78.1.jar;%APP_HOME%\lib\jna-5.3.1.jar;%APP_HOME%\lib\slf4j-api-2.0.16.jar
+set CLASSPATH=%APP_HOME%\lib\gateway-sensor-1.0.0.jar;%APP_HOME%\lib\pcap4j-packetfactory-static-1.8.2.jar;%APP_HOME%\lib\pcap4j-core-1.8.2.jar;%APP_HOME%\lib\slf4j-simple-2.0.16.jar;%APP_HOME%\lib\bcpkix-jdk18on-1.78.1.jar;%APP_HOME%\lib\bcutil-jdk18on-1.78.1.jar;%APP_HOME%\lib\bcprov-jdk18on-1.78.1.jar;%APP_HOME%\lib\gson-2.11.0.jar;%APP_HOME%\lib\jna-5.3.1.jar;%APP_HOME%\lib\slf4j-api-2.0.16.jar;%APP_HOME%\lib\error_prone_annotations-2.27.0.jar
 
 @rem Execute gateway-sensor
 "%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GATEWAY_SENSOR_OPTS%  -classpath "%CLASSPATH%" Main %CMD_LINE_ARGS%
