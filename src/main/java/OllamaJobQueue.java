@@ -24,7 +24,7 @@ import java.util.concurrent.TimeoutException;
 public class OllamaJobQueue {
 
     private static final String LOG_PREFIX      = "[OllamaJobQueue]";
-    private static final int    DEFAULT_WORKERS   = 4;
+    private static final int    DEFAULT_WORKERS   = 10;
     private static final int    DEFAULT_MAX_QUEUE = 200;
     private static final long   JOB_TTL_SECONDS   = 600; // 10 minutos
 

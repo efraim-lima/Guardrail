@@ -111,6 +111,17 @@ public class SecurityClassifier {
         if (userPrompt == null || userPrompt.trim().isEmpty()) return "UNCERTAIN";
         String normalized = userPrompt.trim();
         
+        // Bloqueia a validação enquanto o sistema estiver indexando a base de dados
+        // Isso evita concorrência e sobrecarga (timeouts) no Ollama
+        while (isIndexing) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "UNCERTAIN";
+            }
+        }
+
         // 0. Cache Check
         String cached = cache.get(normalized);
         if (cached != null) return cached;
@@ -119,7 +130,27 @@ public class SecurityClassifier {
             List<PromptExample> dbCopy;
             synchronized (database) { dbCopy = new ArrayList<>(database); }
             
-            // 1. Análise Semântica (Embeddings)
+            // 1. Análise Heurística (Jaccard) - Fast Path 100% Local (CPU Bound)
+            if (!dbCopy.isEmpty()) {
+                double bestHeuristicScore = -1;
+                String heuristicVerdict = null;
+
+                for (PromptExample example : dbCopy) {
+                    double score = calculateJaccard(normalized, example.text);
+                    if (score > bestHeuristicScore) {
+                        bestHeuristicScore = score;
+                        heuristicVerdict = example.category;
+                    }
+                }
+
+                if (bestHeuristicScore >= HEURISTIC_THRESHOLD) {
+                    log((isTestFlow ? "[TEST_FLOW] " : "") + "Match Heurístico (" + String.format("%.2f", bestHeuristicScore) + ") → " + heuristicVerdict);
+                    cache.put(normalized, heuristicVerdict);
+                    return heuristicVerdict;
+                }
+            }
+
+            // 2. Análise Semântica (Embeddings) - Fast Path com chamada à API (I/O Bound)
             if (!dbCopy.isEmpty()) {
                 double[] queryEmbedding = fetchEmbedding(normalized);
                 double bestSemanticScore = -1;
@@ -137,26 +168,6 @@ public class SecurityClassifier {
                     log((isTestFlow ? "[TEST_FLOW] " : "") + "Match Semântico (" + String.format("%.2f", bestSemanticScore) + ") → " + semanticVerdict);
                     cache.put(normalized, semanticVerdict);
                     return semanticVerdict;
-                }
-            }
-
-            // 2. Análise Heurística (Jaccard)
-            if (!dbCopy.isEmpty()) {
-                double bestHeuristicScore = -1;
-                String heuristicVerdict = null;
-
-                for (PromptExample example : dbCopy) {
-                    double score = calculateJaccard(normalized, example.text);
-                    if (score > bestHeuristicScore) {
-                        bestHeuristicScore = score;
-                        heuristicVerdict = example.category;
-                    }
-                }
-
-                if (bestHeuristicScore >= HEURISTIC_THRESHOLD) {
-                    log((isTestFlow ? "[TEST_FLOW] " : "") + "Match Heurístico (" + String.format("%.2f", bestHeuristicScore) + ") → " + heuristicVerdict);
-                    cache.put(normalized, heuristicVerdict);
-                    return heuristicVerdict;
                 }
             }
 
@@ -303,6 +314,9 @@ public class SecurityClassifier {
         bodyMap.put("stream", false);
         Map<String, Object> options = new HashMap<>();
         options.put("temperature", 0.0);
+        options.put("num_predict", 10);
+        options.put("top_k", 10);
+        options.put("top_p", 0.5);
         bodyMap.put("options", options);
 
         HttpResponse<String> response = sendRequestWithFallback(ollamaBaseUrl + "/api/generate", gson.toJson(bodyMap), ollamaTimeout);
