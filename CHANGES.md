@@ -1,22 +1,6 @@
 # Registro de Alterações (Changelog)
 
-## [2026-05-07] - Integração do Qwen via Ollama com Contexto Few-Shot do BASE.json
-
-### Arquivos Modificados:
-- `src/main/java/SecurityClassifier.java`: Implementada integração com o modelo Qwen (via API Ollama `/api/generate`) como árbitro de classificação com contexto few-shot dinâmico. O método `selectTopExamplesPerCategory()` seleciona os 2 exemplos mais relevantes de cada categoria da base de conhecimento (por score híbrido), e `buildQwenPrompt()` os formata como exemplos de referência no prompt. O método `classifyWithQwen()` coordena a chamada HTTP via `callOllamaGenerate()` (usando `java.net.HttpURLConnection`), extrai o campo `"response"` do JSON retornado e mapeia o texto para uma das cinco categorias válidas.
-- `src/main/java/SecurityClassifier.java`: Adicionados limiares híbridos por categoria (`buildCategoryThresholds()`) para o caminho de fallback do RAG local: categorias de maior risco (`UNSAFE`=0.05, `RISKY`=0.06, `SUSPECT`=0.06) utilizam limiares mais baixos (maior sensibilidade), enquanto `SAFE` requer evidência mais sólida (0.09). Adicionada constante `HIGH_CONFIDENCE_LOCAL_THRESHOLD=0.45` para caminho rápido quando o RAG local já é de alta confiança.
-- `src/main/java/SecurityClassifier.java`: Adicionados campos de instância `qwenEnabled`, `ollamaEndpoint` e `ollamaModel` inicializados via variáveis de ambiente (`QWEN_CLASSIFICATION_ENABLED`, `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`) no construtor.
-- `docker-compose.yaml`: Adicionada variável de ambiente `QWEN_CLASSIFICATION_ENABLED=true` ao serviço gateway e corrigida `REFERENCE_PROMPTS_PATH` de `PROMPTS.md` para `BASE.json`.
-- `Dockerfile`: Adicionada instrução `COPY src/main/java/BASE.json BASE.json` para embarcar a base de conhecimento na imagem do contêiner.
-- `env.example`: Adicionada variável `QWEN_CLASSIFICATION_ENABLED=true` com documentação.
-
-### Causa Raiz:
-O classificador realizava apenas RAG local (TF-IDF + cosseno + Jaccard), sem nenhuma chamada efetiva ao modelo Qwen. A variável `OLLAMA_ENDPOINT` existia no `docker-compose.yaml` mas nenhum código a consumia. Prompts com vocabulário distante dos exemplos existentes caíam em `UNCERTAIN` mesmo quando a intenção semântica era clara para um modelo de linguagem.
-
-### Justificativa Técnica:
-A arquitetura adotada segue o padrão RAG-aumentado: o índice local serve como recuperador de contexto (retriever), selecionando os exemplos do `BASE.json` mais próximos ao prompt recebido por categoria; esses exemplos são fornecidos ao Qwen como few-shot, permitindo que o modelo generalize para formulações não cobertas literalmente na base. O RAG local permanece como caminho de alta confiança (score ≥ 0.45) e como fallback quando o Ollama está indisponível, garantindo resiliência sem dependência de rede crítica. A adição de limiares por categoria no fallback aumenta a sensibilidade para operações de maior risco sem reduzir a precisão para operações seguras.
-
----
+## [2026-05-07] - Aumento de Sensibilidade Semântica no Classificador RAG
 
 ### Arquivos Modificados:
 - `src/main/java/SecurityClassifier.java`: Ajustados os limiares de aceitação (`SEMANTIC_THRESHOLD`, `HEURISTIC_THRESHOLD`, `HYBRID_THRESHOLD`) para ampliar a cobertura de combinações linguísticas semanticamente próximas.

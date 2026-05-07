@@ -44,8 +44,9 @@ public class SecurityClassifier {
     private static final String DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
     private static final int QWEN_CONTEXT_EXAMPLES_PER_CLASS = 2;
-    private static final int OLLAMA_CONNECT_TIMEOUT_MS = 3000;
-    private static final int OLLAMA_READ_TIMEOUT_MS = 20000;
+    private static final int OLLAMA_CONNECT_TIMEOUT_MS = 5000;
+    // Inferência em CPU pode ser significativamente mais lenta; 90s comporta qwen2.5:1.5b em hardware modesto
+    private static final int OLLAMA_READ_TIMEOUT_MS = 90000;
 
     private static final Pattern OLLAMA_RESPONSE_FIELD = Pattern.compile(
             "\"response\"\\s*:\\s*\"((?:\\\\\\.|[^\\\\\"])*)\"",
