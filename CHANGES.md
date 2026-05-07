@@ -1,5 +1,17 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-07] - Correção de Travamento no Prompt Crawler por Espera Infinita de Sinal de Prontidão
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Substituída espera indefinida do estado de conclusão (`wait_for_function` com `timeout=0`) por timeout explícito vinculado a `MAX_PROCESSING_WAIT_SEC`, eliminando bloqueio infinito do ciclo de automação quando o atributo `data-agentk-ready` não é sinalizado.
+- `scripts/prompt_crawler.py`: Adicionada limpeza preventiva do atributo `data-agentk-ready` antes de cada submissão de prompt, reduzindo acoplamento com estado residual de execução anterior.
+- `scripts/prompt_crawler.py`: Implementado tratamento dedicado para `TimeoutError` com captura de evidência (screenshot) e recarga controlada da página para recuperação autônoma do fluxo de testes sem encerramento abrupto do processo.
+
+### Causa Raiz:
+O fluxo de sincronização do crawler dependia de sinalização assíncrona no DOM e utilizava uma espera sem limite temporal para detectar a conclusão do processamento. Em cenários de falha de emissão do sinal, atraso de renderização ou estado residual no atributo de prontidão, a automação permanecia bloqueada indefinidamente, aparentando travamento após poucos prompts. A correção introduz limites determinísticos de espera e estratégia de recuperação, preservando continuidade operacional e rastreabilidade diagnóstica.
+
+---
+
 ## [2026-04-30] - Estabilização de Callback OAuth2 Sem Interação Manual
 
 ### Arquivos Modificados:

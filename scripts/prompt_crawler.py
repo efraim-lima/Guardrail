@@ -30,6 +30,8 @@ SCREENSHOTS_DIR = OUTPUT_DIR / "screenshots"
 
 MAX_PROCESSING_WAIT_SEC = 200 # Cobre a cadeia completa: Ollama (120s) + long-poll gateway (150s) + overhead de UI
 LOGIN_TIMEOUT_MS = 30000
+INPUT_REENABLE_WAIT_SEC = 20
+PROCESSING_SIGNAL_WAIT_MS = 8000
 
 # Fail-Fast: Garante que os diretórios de saída existam antes de iniciar o log
 try:
@@ -137,11 +139,13 @@ class AgentKAutomation:
             # Aguarda o campo estar visível
             self.page.wait_for_selector(input_selector, state="visible")
             
-            # Fail-Fast: Aguarda explicitamente o campo ser habilitado (Streamlit re-enabling UI)
-            # O 'fill' do Playwright já tenta fazer isso, mas o loop garante rastreabilidade no log.
+            # Remove sinal antigo antes de um novo envio para evitar falso-positivo/falso-bloqueio.
+            self.page.evaluate("() => document.body.removeAttribute('data-agentk-ready')")
+
+            # Fail-Fast: Aguarda explicitamente o campo ser habilitado (Streamlit re-enabling UI).
             wait_enabled_start = time.time()
             while self.page.is_disabled(input_selector):
-                if time.time() - wait_enabled_start > 20: # 20s de tolerância para re-habilitação
+                if time.time() - wait_enabled_start > INPUT_REENABLE_WAIT_SEC:
                     raise TimeoutError(f"O campo de input {input_selector} permaneceu desabilitado após processamento anterior.")
                 time.sleep(0.5)
 
@@ -152,7 +156,7 @@ class AgentKAutomation:
             try:
                 self.page.wait_for_function(
                     "() => !document.body.hasAttribute('data-agentk-ready')", 
-                    timeout=5000
+                    timeout=PROCESSING_SIGNAL_WAIT_MS
                 )
                 logger.info("Processamento iniciado (sinal detectado)...")
             except:
@@ -162,7 +166,7 @@ class AgentKAutomation:
             # Este sinal é emitido pelo AgentK via Javascript ao final de cada execução.
             self.page.wait_for_function(
                 "() => document.body.getAttribute('data-agentk-ready') === 'true'", 
-                timeout=0
+                timeout=MAX_PROCESSING_WAIT_SEC * 1000
             )
             logger.info("Processamento concluído via sinal de prontidão.")
             
@@ -180,6 +184,16 @@ class AgentKAutomation:
                 "screenshot": str(screenshot_path),
                 "content": content
             }
+        except TimeoutError as e:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timeout_img = SCREENSHOTS_DIR / f"timeout_{index}_{ts}.png"
+            self.page.screenshot(path=str(timeout_img), full_page=True)
+            logger.error(
+                f"Timeout ao processar prompt {index}: {e}. "
+                f"Screenshot salva em: {timeout_img}. Recarregando a página para recuperar o fluxo."
+            )
+            self.page.reload(wait_until="domcontentloaded")
+            return None
         except Exception as e:
             logger.error(f"Erro ao processar prompt {index}: {e}")
             return None
