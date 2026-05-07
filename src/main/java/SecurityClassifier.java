@@ -25,7 +25,7 @@ public class SecurityClassifier {
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
     private static final int DEFAULT_OLLAMA_TIMEOUT = 120;
     private static final int TOP_K_EXAMPLES = 5;
-    private static final int BATCH_SIZE = 50; // Reduzido para 50 para evitar timeouts no Ollama
+    private static final int BATCH_SIZE = 25; // Reduzido para 25 para evitar timeouts no Ollama
     private static final String CACHE_FILE = "BASE.embeddings.json";
     
     // Limiares de aceitação para as análises locais (Fail-Fast)
@@ -269,8 +269,13 @@ public class SecurityClassifier {
                     database.add(new PromptExample(batch.get(j).text, batch.get(j).category, embeddings.get(j)));
                 }
                 log("Aprendizado progressivo: " + end + "/" + pending.size());
+                
+                // Pequena pausa para evitar sobrecarga no Ollama durante indexação massiva
+                Thread.sleep(500); 
             } catch (Exception e) {
-                logError("Erro no lote de aprendizado: " + e.getMessage());
+                logError("Erro no lote de aprendizado (" + i + "-" + end + "): " + e.getMessage());
+                // Em caso de erro, espera um pouco mais antes de tentar o próximo lote
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
     }
@@ -284,8 +289,8 @@ public class SecurityClassifier {
         Map<String, Object> bodyMap = new HashMap<>();
         bodyMap.put("model", model);
         bodyMap.put("input", texts);
-        // Timeout de 60s para embeddings para não travar a fila
-        HttpResponse<String> response = sendRequestWithFallback(ollamaBaseUrl + "/api/embed", gson.toJson(bodyMap), 60);
+        // Timeout de 120s para embeddings para garantir processamento em hardware limitado
+        HttpResponse<String> response = sendRequestWithFallback(ollamaBaseUrl + "/api/embed", gson.toJson(bodyMap), 120);
         BatchEmbedResponse res = gson.fromJson(response.body(), BatchEmbedResponse.class);
         if (res == null || res.embeddings == null) throw new IOException("Ollama Error");
         return res.embeddings;

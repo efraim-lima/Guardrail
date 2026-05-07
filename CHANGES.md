@@ -3,8 +3,8 @@
 ## [2026-05-06] - Ajuste na Arquitetura de Validação de Prompts
 
 **Arquivo:** `src/main/java/SecurityClassifier.java`, `src/main/java/OllamaJobQueue.java`
-**Descrição:** Implementação de um fluxo sequencial de validação de prompts para otimização de performance e precisão. O novo pipeline segue a ordem: 1) Análise Semântica (Embeddings), 2) Análise Heurística (Jaccard), e 3) Análise de IA (Ollama) como fallback final. Adição de logs de rastreamento de threads para garantir a visibilidade do processamento multitarefa.
-**Motivo:** Atender ao requisito de priorização de análises locais antes de acionar o LLM, garantindo que o Ollama seja utilizado exclusivamente quando necessário e em threads dedicadas.
+**Descrição:** Implementação de um fluxo sequencial de validação de prompts para otimização de performance e precisão. O novo pipeline segue a ordem: 1) Análise Semântica (Embeddings), 2) Análise Heurística (Jaccard), e 3) Análise de IA (Ollama) como fallback final. Adição de logs de rastreamento de threads para garantir a visibilidade do processamento multitarefa. Adicionalmente, o sistema de indexação de embeddings foi otimizado com redução do tamanho do lote para 25 e inserção de delays entre requisições para mitigar timeouts no Ollama.
+**Motivo:** Atender ao requisito de priorização de análises locais antes de acionar o LLM e resolver instabilidades de conexão observadas durante o startup da inteligência.
 
 ---
 
