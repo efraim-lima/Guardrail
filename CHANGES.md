@@ -1,33 +1,5 @@
 # Registro de Alterações (Changelog)
 
-## [2026-05-05] - Implementação de Fluxo Secundário para Coleta Estatística e Bypass de IA Externa
-
-### Arquivos Modificados:
-- `src/main/java/AuditLogger.java` (**MODIFICADO**): Introduzido o método `logTestVerdict` para padronização de registros de auditoria específicos do fluxo de testes estatísticos.
-- `src/main/java/SecurityClassifier.java` (**MODIFICADO**): Refatorada a lógica de classificação para suportar a flag `isTestFlow`, permitindo telemetria diferenciada e identificação de requisições de teste nos logs do sistema.
-- `src/main/java/OllamaJobQueue.java` (**MODIFICADO**): Atualizadas as estruturas `JobEntry` e `AwaitResult` para propagar o estado de teste através do ciclo de vida assíncrono do job.
-- `src/main/java/PromptValidator.java` (**MODIFICADO**): Implementado suporte ao cabeçalho HTTP `X-Test-Flow`. O componente agora discrimina requisições de auditoria estatística e aplica a política de logs simplificada.
-- `src/main/java/Main.java` (**MODIFICADO**): Adicionada sinalização visual no startup do serviço indicando a disponibilidade do fluxo secundário.
-- **build.gradle** (MODIFICADO): Adicionada dependência da biblioteca **Gson** para manipulação robusta de JSON, necessária para o processamento de grandes arrays de embeddings gerados pelo Ollama.
-- **proguard-rules.pro** (MODIFICADO): Adicionadas regras específicas para manter a biblioteca Gson e as classes internas de modelo JSON (`SecurityClassifier$**`) durante o processo de ofuscação e compactação binária.
-- **SecurityClassifier.java** (MODIFICADO): Corrigido o gargalo de processamento ("limite de 2 perguntas"). Implementada uma pausa estratégica entre os lotes de indexação e redução do tamanho do lote (25). Isso libera slots de execução no Ollama para que as classificações de prompts não fiquem presas atrás da indexação inicial da base de conhecimento.
-
-### Descrição Técnica:
-A arquitetura foi temporariamente estendida para viabilizar a coleta de dados de desempenho e precisão do sensor de segurança (Guardrail) sem incorrer em custos ou latências de processamento da IA externa. O novo "Fluxo Secundário" estabelece um canal direto entre a interface de usuário e o classificador local (Ollama). 
-
-No backend Java, a introdução de metadados de contexto (`isTestFlow`) nas filas assíncronas permite que o sistema opere em modo de telemetria rica, registrando vereditos de forma isolada para posterior análise estatística. No frontend Python, a lógica de integração com o LLM foi bypassada em favor de uma função paralela que atende aos requisitos de automação de testes: após a exibição do veredito na interface Streamlit, o sistema aguarda um intervalo de 3 segundos para captura de tela (crawler) e, em seguida, executa a limpeza atômica do estado da sessão e o refresh do navegador, garantindo a idempotência e a pureza de cada caso de teste individual.
-
----
-
-## [2026-05-04] - Consolidação de Documentação Acadêmica para TCC
-
-### Arquivos Modificados:
-- `Agentk-Sugest/alteracoes.md` (**MODIFICADO**): Documento expandido para cobrir integralmente todas as alterações presentes em `alteracoes.txt`. Adicionadas seções sobre sinais de automação (DOM), infraestrutura de containers (Docker/Compose), auditoria de servidor e melhorias de UX (CSS). Todas as seções agora contam com referências precisas de arquivos e linhas.
-
-### Descrição Técnica:
-A criação deste arquivo visa fornecer um substrato formal para o Trabalho de Conclusão de Curso (TCC), consolidando as principais mudanças lógicas e de infraestrutura do sistema. O documento aborda a implementação de logout centralizado, o mecanismo de validação assíncrona do Gateway, a padronização de logs de auditoria (Conformidade Forense) e a governança de ações de alto risco via integração com Keycloak. Foram incluídos trechos de código representativos para demonstrar a aplicação prática dos conceitos de segurança e orquestração.
-
-
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
 
 ### Arquivos Modificados:

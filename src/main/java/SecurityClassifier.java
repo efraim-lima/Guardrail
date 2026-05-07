@@ -1,6 +1,7 @@
 import com.google.gson.Gson;
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -24,6 +25,8 @@ public class SecurityClassifier {
     private static final String DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
     private static final int DEFAULT_OLLAMA_TIMEOUT = 120;
+    private static final int DEFAULT_OLLAMA_RETRIES = 2;
+    private static final int DEFAULT_RETRY_BACKOFF_MS = 1500;
     private static final int TOP_K_EXAMPLES = 5;
     private static final int BATCH_SIZE = 25; // Reduzido para 25 para evitar timeouts no Ollama
     private static final String CACHE_FILE = envOr("EMBEDDINGS_CACHE_PATH", "BASE.embeddings.json");
@@ -36,6 +39,8 @@ public class SecurityClassifier {
     private final Gson gson = new Gson();
     private final String model;
     private final int ollamaTimeout;
+    private final int maxRetryAttempts;
+    private final int retryBackoffMs;
     
     private String ollamaBaseUrl;
     private final List<PromptExample> database = Collections.synchronizedList(new ArrayList<>());
@@ -59,7 +64,9 @@ public class SecurityClassifier {
         }
         this.ollamaBaseUrl = url;
         this.model = envOr("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL);
-        this.ollamaTimeout = Integer.parseInt(envOr("OLLAMA_TIMEOUT", String.valueOf(DEFAULT_OLLAMA_TIMEOUT)));
+        this.ollamaTimeout = parsePositiveIntEnv("OLLAMA_TIMEOUT", DEFAULT_OLLAMA_TIMEOUT);
+        this.maxRetryAttempts = parsePositiveIntEnv("OLLAMA_RETRIES", DEFAULT_OLLAMA_RETRIES);
+        this.retryBackoffMs = parsePositiveIntEnv("OLLAMA_RETRY_BACKOFF_MS", DEFAULT_RETRY_BACKOFF_MS);
         
         CompletableFuture.runAsync(this::initializeDatabase);
     }
@@ -315,15 +322,66 @@ public class SecurityClassifier {
     }
 
     private HttpResponse<String> sendRequestWithFallback(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        try { return executeHttpRequest(url, jsonBody, timeoutSec); }
-        catch (IOException e) {
-            if (url.contains("127.0.0.1")) return executeHttpRequest(url.replace("127.0.0.1", "host.docker.internal"), jsonBody, timeoutSec);
+        if (url == null || url.isBlank()) {
+            throw new IOException("URL do Ollama inválida");
+        }
+        if (jsonBody == null || jsonBody.isBlank()) {
+            throw new IOException("Payload de requisição inválido");
+        }
+        if (timeoutSec <= 0) {
+            throw new IOException("Timeout de requisição inválido");
+        }
+
+        try {
+            return executeHttpRequestWithRetry(url, jsonBody, timeoutSec);
+        } catch (IOException e) {
+            if (url.contains("127.0.0.1")) {
+                String fallbackUrl = url.replace("127.0.0.1", "host.docker.internal");
+                log("Falha no endpoint primário. Tentando fallback em " + fallbackUrl);
+                return executeHttpRequestWithRetry(fallbackUrl, jsonBody, timeoutSec);
+            }
             throw e;
         }
     }
 
+    private HttpResponse<String> executeHttpRequestWithRetry(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
+        IOException lastError = null;
+        int totalAttempts = Math.max(1, maxRetryAttempts + 1);
+
+        for (int attempt = 1; attempt <= totalAttempts; attempt++) {
+            try {
+                return executeHttpRequest(url, jsonBody, timeoutSec);
+            } catch (HttpTimeoutException e) {
+                lastError = e;
+                logError("Timeout no Ollama (tentativa " + attempt + "/" + totalAttempts + ") em " + url + ". Erro: " + e.getMessage());
+
+                if (attempt >= totalAttempts) {
+                    throw e;
+                }
+
+                try {
+                    Thread.sleep((long) retryBackoffMs * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
+            }
+        }
+
+        if (lastError != null) {
+            throw lastError;
+        }
+
+        throw new IOException("Falha inesperada ao executar requisição HTTP");
+    }
+
     private HttpResponse<String> executeHttpRequest(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(timeoutSec))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
         return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
@@ -361,6 +419,25 @@ public class SecurityClassifier {
     private static String envOr(String key, String fallback) {
         String v = System.getenv(key);
         return (v == null || v.isBlank()) ? fallback : v;
+    }
+
+    private static int parsePositiveIntEnv(String key, int fallback) {
+        String rawValue = System.getenv(key);
+        if (rawValue == null || rawValue.isBlank()) {
+            return fallback;
+        }
+
+        try {
+            int parsed = Integer.parseInt(rawValue.trim());
+            if (parsed <= 0) {
+                logError("Valor inválido em " + key + " (" + rawValue + "). Usando fallback=" + fallback);
+                return fallback;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            logError("Formato inválido em " + key + " (" + rawValue + "). Usando fallback=" + fallback);
+            return fallback;
+        }
     }
 
     private static void log(String msg)      { System.out.println(LOG_PREFIX + " " + msg); }
