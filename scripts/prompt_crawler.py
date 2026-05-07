@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict
+# pyrefly: ignore [missing-import]
 from playwright.sync_api import sync_playwright, Browser, Page, TimeoutError
 
 # === CONFIGURAÇÃO (CONSTANTES) ===
@@ -161,7 +162,7 @@ class AgentKAutomation:
             # Este sinal é emitido pelo AgentK via Javascript ao final de cada execução.
             self.page.wait_for_function(
                 "() => document.body.getAttribute('data-agentk-ready') === 'true'", 
-                timeout=MAX_PROCESSING_WAIT_SEC * 1000
+                timeout=0
             )
             logger.info("Processamento concluído via sinal de prontidão.")
             

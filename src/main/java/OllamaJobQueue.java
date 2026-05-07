@@ -168,11 +168,9 @@ public class OllamaJobQueue {
         }
 
         try {
-            String verdict = entry.future.get(timeoutSeconds, TimeUnit.SECONDS);
+            // Removido o timeout para aguardar a conclusão da thread infinitamente
+            String verdict = entry.future.get();
             return new AwaitResult(AwaitStatus.DONE, verdict, entry.prompt, entry.isTestFlow);
-        } catch (TimeoutException e) {
-            // Job ainda em processamento: cliente deve retentar o long-poll
-            return new AwaitResult(AwaitStatus.PROCESSING, null, null, entry.isTestFlow);
         } catch (ExecutionException e) {
             logError("Falha no job " + jobId + ": "
                     + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));

@@ -175,22 +175,16 @@ public class SecurityClassifier {
             log((isTestFlow ? "[TEST_FLOW] " : "") + "Iniciando análise exclusiva via IA para o prompt: " + 
                 (normalized.length() > 30 ? normalized.substring(0, 30) + "..." : normalized));
             
-            // Busca exemplos próximos para context-learning (opcional, mas mantido para precisão)
-            List<ScoredExample> ragContext = new ArrayList<>();
+            // Agrupa os tokens por categoria para reduzir o payload do Ollama e aumentar a velocidade
+            Map<String, Set<String>> categoryTokens = new HashMap<>();
             if (!dbCopy.isEmpty()) {
                 for (PromptExample example : dbCopy) {
-                    double heuristicScore = calculateJaccard(normalized, example.text);
-                    ragContext.add(new ScoredExample(example, heuristicScore));
+                    categoryTokens.computeIfAbsent(example.category, k -> new HashSet<>())
+                                  .addAll(tokenize(example.text));
                 }
-                ragContext.sort(Comparator.comparingDouble((ScoredExample e) -> e.score).reversed());
             }
 
-            List<PromptExample> topExamples = ragContext.stream()
-                    .limit(TOP_K_EXAMPLES)
-                    .map(e -> e.example)
-                    .collect(Collectors.toList());
-
-            String aiPrompt = buildAIPrompt(normalized, topExamples);
+            String aiPrompt = buildAIPrompt(normalized, categoryTokens);
             String llmResponse = queryLocalLLM(aiPrompt);
             String verdict = evaluateResponse(llmResponse);
             
@@ -205,20 +199,16 @@ public class SecurityClassifier {
         }
     }
 
-    private String buildAIPrompt(String userPrompt, List<PromptExample> examples) {
+    private String buildAIPrompt(String userPrompt, Map<String, Set<String>> categoryTokens) {
         StringBuilder sb = new StringBuilder();
         sb.append("### PAPEL: AUDITOR DE SEGURANÇA KUBERNETES ESTRITO ###\n");
         sb.append("Analise o prompt e responda APENAS: UNSAFE, RISKY, SUSPECT, SAFE ou UNCERTAIN.\n\n");
         
-        sb.append("### REGRAS:\n");
-        sb.append("- DELEÇÃO/REMOÇÃO de pods, deployments, etc = SUSPECT ou RISKY.\n");
-        sb.append("- Bypass de filtros = UNSAFE.\n");
-        sb.append("- Listagens/Consultas (get, list) = SAFE.\n\n");
-
-        if (!examples.isEmpty()) {
-            sb.append("### EXEMPLOS RELEVANTES:\n");
-            for (PromptExample ex : examples) {
-                sb.append("- \"").append(ex.text).append("\" → ").append(ex.category).append("\n");
+        sb.append("### REGRAS (TOKENS DE CONTEXTO POR CATEGORIA):\n");
+        if (categoryTokens != null && !categoryTokens.isEmpty()) {
+            for (Map.Entry<String, Set<String>> entry : categoryTokens.entrySet()) {
+                sb.append("- ").append(entry.getKey()).append(": ");
+                sb.append(String.join(", ", entry.getValue())).append("\n");
             }
             sb.append("\n");
         }
@@ -333,7 +323,7 @@ public class SecurityClassifier {
     }
 
     private HttpResponse<String> executeHttpRequest(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(timeoutSec)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
+        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
         return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
