@@ -26,26 +26,16 @@ public class SecurityClassifier {
     private static final String DEFAULT_REFERENCE_FALLBACK_PATH = "src/main/java/BASE.json";
     private static final int MAX_CACHE_SIZE = 100;
 
-    // --- Thresholds de classificação local (fallback sem Qwen) ---
-    private static final double SEMANTIC_THRESHOLD = 0.09;
-    private static final double HEURISTIC_THRESHOLD = 0.06;
-    private static final double HYBRID_THRESHOLD = 0.08;
-    private static final double SUSPICIOUS_INTENT_BOOST = 0.12;
-    // Score a partir do qual o RAG local é considerado de alta confiança (pula o Qwen)
-    private static final double HIGH_CONFIDENCE_LOCAL_THRESHOLD = 0.45;
-    private static final int APPROX_TOKEN_MIN_LENGTH = 4;
-    private static final int APPROX_MAX_EDIT_DISTANCE = 1;
-
-    // --- Limiares híbridos por categoria (RAG local) ---
-    // Categorias de maior risco usam limiar mais baixo (err on the side of caution)
-    private static final Map<String, Double> CATEGORY_HYBRID_THRESHOLDS = buildCategoryThresholds();
+    // Mínimo de tokens do prompt que devem coincidir com um exemplo do BASE.json
+    private static final int KEYWORD_MATCH_MIN = 2;
+    // Prompts com mais tokens que esse valor usam Jaccard (varredura heurística completa)
+    private static final int LONG_PROMPT_TOKEN_THRESHOLD = 15;
 
     // --- Integração Qwen / Ollama ---
     private static final String DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:3b";
-    private static final int QWEN_CONTEXT_EXAMPLES_PER_CLASS = 2;
     private static final int OLLAMA_CONNECT_TIMEOUT_MS = 5000;
-    // Inferência em CPU pode ser significativamente mais lenta; 90s comporta qwen2.5:1.5b em hardware modesto
+    // 90s acomoda inferência em CPU para qwen2.5:3b
     private static final int OLLAMA_READ_TIMEOUT_MS = 90000;
 
     private static final Pattern OLLAMA_RESPONSE_FIELD = Pattern.compile(
@@ -62,14 +52,8 @@ public class SecurityClassifier {
             Pattern.CASE_INSENSITIVE);
 
     private static final Map<String, String> TOKEN_CANONICAL_MAP = buildTokenCanonicalMap();
-    private static final Set<String> DELETE_INTENT_TOKENS = Set.of(
-            "delete_action", "remove_action", "destroy_action");
-    private static final Set<String> K8S_RESOURCE_TOKENS = Set.of(
-            "pod", "deployment", "namespace", "configmap", "secret", "service", "ingress",
-            "statefulset", "replicaset", "daemonset", "pvc", "persistentvolume", "cluster");
 
     private final List<PromptExample> database = Collections.synchronizedList(new ArrayList<>());
-    private final Map<String, Double> idfByToken = Collections.synchronizedMap(new HashMap<>());
     private final Map<String, String> cache = Collections.synchronizedMap(new LinkedHashMap<String, String>(128, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
@@ -118,80 +102,40 @@ public class SecurityClassifier {
         }
 
         Set<String> promptTokens = new HashSet<>(promptTokenList);
-        Map<String, Integer> promptTf = buildTermFrequency(promptTokenList);
-        Map<String, Double> promptVector;
-        synchronized (idfByToken) {
-            promptVector = buildTfIdfVector(promptTf, idfByToken);
-        }
-        double promptNorm = calculateVectorNorm(promptVector);
-        boolean promptHasDeleteIntent = hasAnyToken(promptTokens, DELETE_INTENT_TOKENS);
-        boolean promptHasK8sResource = hasAnyToken(promptTokens, K8S_RESOURCE_TOKENS);
+        boolean isLongPrompt = promptTokenList.size() > LONG_PROMPT_TOKEN_THRESHOLD;
+        log("Analisando | tokens=" + promptTokenList.size()
+                + (isLongPrompt ? " [longo — varredura Jaccard]" : " [curto — interseção direta]"));
 
-        // Coleta todos os exemplos pontuados para selecionar contexto few-shot ao Qwen
-        List<ScoredExample> allScored = qwenEnabled ? new ArrayList<>(dbCopy.size()) : null;
-        ScoredExample best = null;
+        // ETAPA 1: cruzamento com BASE.json por coincidência de palavras-chave
+        KeywordMatchResult matchResult = isLongPrompt
+                ? fullHeuristicScan(promptTokens, dbCopy)
+                : keywordIntersectionScan(promptTokens, dbCopy);
 
-        for (PromptExample example : dbCopy) {
-            double exactJaccard = calculateJaccard(promptTokens, example.tokens);
-            double softOverlap = calculateSoftTokenOverlap(promptTokens, example.tokens);
-            double heuristicScore = Math.max(exactJaccard, softOverlap * 0.92);
-
-            double cosineSimilarity = calculateCosineSimilarity(promptVector, promptNorm, example.vector, example.vectorNorm);
-            double semanticScore = (0.78 * cosineSimilarity) + (0.22 * softOverlap);
-
-            double hybridScore = (0.62 * semanticScore) + (0.38 * heuristicScore);
-
-            if (promptHasDeleteIntent && promptHasK8sResource && "SUSPECT".equals(example.category)) {
-                hybridScore += SUSPICIOUS_INTENT_BOOST;
-            }
-
-            ScoredExample current = new ScoredExample(example, heuristicScore, semanticScore, hybridScore);
-            if (best == null || current.hybridScore > best.hybridScore) {
-                best = current;
-            }
-            if (allScored != null) {
-                allScored.add(current);
-            }
-        }
-
-        if (best == null) {
+        if (matchResult == null || matchResult.matchCount < KEYWORD_MATCH_MIN) {
+            log("Sem coincidência ≥ " + KEYWORD_MATCH_MIN + " palavras em BASE.json → UNCERTAIN");
             cache.put(normalizedPrompt, "UNCERTAIN");
             return "UNCERTAIN";
         }
 
-        // --- Caminho rápido: confiança local alta, pula o Qwen ---
-        if (best.hybridScore >= HIGH_CONFIDENCE_LOCAL_THRESHOLD) {
-            String fastResult = best.example.category;
-            cache.put(normalizedPrompt, fastResult);
-            return fastResult;
-        }
+        log("Match BASE.json: categoria=" + matchResult.category
+                + " | palavras_coincidentes=" + matchResult.matchCount
+                + " | exemplo=[" + matchResult.bestExample.text + "]");
 
-        // --- Classificação via Qwen com contexto do BASE.json ---
-        if (qwenEnabled && allScored != null) {
-            List<ScoredExample> contextExamples = selectTopExamplesPerCategory(allScored, QWEN_CONTEXT_EXAMPLES_PER_CLASS);
-            String qwenResult = classifyWithQwen(normalizedPrompt, contextExamples);
-            if (qwenResult != null) {
-                log("Qwen classificou: [" + qwenResult + "] para prompt: " + normalizedPrompt);
-                cache.put(normalizedPrompt, qwenResult);
-                return qwenResult;
+        // ETAPA 2: double-check semântico com Qwen (confirmação leve da categoria detectada)
+        String result = matchResult.category;
+        if (qwenEnabled) {
+            String qwenVerdict = qwenDoubleCheck(normalizedPrompt, matchResult.category,
+                    matchResult.bestExample.text);
+            if (qwenVerdict != null) {
+                log("Qwen double-check: " + matchResult.category + " → " + qwenVerdict);
+                result = qwenVerdict;
+            } else {
+                log("Qwen indisponível, mantendo resultado do match local: " + result);
             }
-            log("Qwen indisponível ou sem resposta válida, usando fallback RAG local.");
         }
 
-        // --- Fallback: RAG local com limiares por categoria ---
-        double categoryThreshold = CATEGORY_HYBRID_THRESHOLDS.getOrDefault(
-                best.example.category, HYBRID_THRESHOLD);
-        boolean hasHeuristicMatch = best.heuristicScore >= HEURISTIC_THRESHOLD;
-        boolean hasSemanticMatch  = best.semanticScore  >= SEMANTIC_THRESHOLD;
-        boolean hasHybridMatch    = best.hybridScore    >= categoryThreshold;
-
-        if (!hasHeuristicMatch && !hasSemanticMatch && !hasHybridMatch) {
-            cache.put(normalizedPrompt, "UNCERTAIN");
-            return "UNCERTAIN";
-        }
-
-        cache.put(normalizedPrompt, best.example.category);
-        return best.example.category;
+        cache.put(normalizedPrompt, result);
+        return result;
     }
 
     private void initializeDatabase() {
@@ -208,23 +152,13 @@ public class SecurityClassifier {
                 return;
             }
 
-            Map<String, Double> localIdf = computeIdf(loadedExamples);
-            for (PromptExample example : loadedExamples) {
-                example.vector = buildTfIdfVector(example.termFrequency, localIdf);
-                example.vectorNorm = calculateVectorNorm(example.vector);
-            }
-
             synchronized (database) {
                 database.clear();
                 database.addAll(loadedExamples);
             }
-            synchronized (idfByToken) {
-                idfByToken.clear();
-                idfByToken.putAll(localIdf);
-            }
-            log("RAG local inicializado com " + loadedExamples.size() + " exemplos de BASE.json.");
+            log("Base de conhecimento carregada: " + loadedExamples.size() + " exemplos.");
         } catch (Exception e) {
-            logError("Erro no startup da inteligência RAG: " + e.getMessage());
+            logError("Erro ao carregar base de conhecimento: " + e.getMessage());
         }
     }
 
@@ -263,8 +197,7 @@ public class SecurityClassifier {
             }
 
             Set<String> tokens = new HashSet<>(tokenList);
-            Map<String, Integer> termFrequency = buildTermFrequency(tokenList);
-            list.add(new PromptExample(text, category, tokens, termFrequency));
+            list.add(new PromptExample(text, category, tokens));
         }
         return list;
     }
@@ -350,188 +283,6 @@ public class SecurityClassifier {
         return out.toString();
     }
 
-    private static Map<String, Double> computeIdf(List<PromptExample> examples) {
-        Map<String, Integer> documentFrequency = new HashMap<>();
-        for (PromptExample example : examples) {
-            for (String token : example.tokens) {
-                documentFrequency.merge(token, 1, Integer::sum);
-            }
-        }
-
-        int documentCount = examples.size();
-        Map<String, Double> idf = new HashMap<>();
-        for (Map.Entry<String, Integer> entry : documentFrequency.entrySet()) {
-            double value = Math.log((documentCount + 1.0) / (entry.getValue() + 1.0)) + 1.0;
-            idf.put(entry.getKey(), value);
-        }
-        return idf;
-    }
-
-    private static Map<String, Double> buildTfIdfVector(Map<String, Integer> termFrequency, Map<String, Double> idfMap) {
-        Map<String, Double> vector = new HashMap<>();
-        if (termFrequency == null || termFrequency.isEmpty()) {
-            return vector;
-        }
-
-        for (Map.Entry<String, Integer> entry : termFrequency.entrySet()) {
-            String token = entry.getKey();
-            int tf = entry.getValue();
-            if (tf <= 0) {
-                continue;
-            }
-
-            double idf = idfMap.getOrDefault(token, 0.0);
-            if (idf <= 0.0) {
-                continue;
-            }
-
-            double weightedTf = 1.0 + Math.log(tf);
-            vector.put(token, weightedTf * idf);
-        }
-        return vector;
-    }
-
-    private static double calculateVectorNorm(Map<String, Double> vector) {
-        if (vector == null || vector.isEmpty()) {
-            return 0.0;
-        }
-        double sum = 0.0;
-        for (double value : vector.values()) {
-            sum += value * value;
-        }
-        return Math.sqrt(sum);
-    }
-
-    private static double calculateCosineSimilarity(Map<String, Double> left, double leftNorm,
-                                                    Map<String, Double> right, double rightNorm) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return 0.0;
-        }
-        if (leftNorm == 0.0 || rightNorm == 0.0) {
-            return 0.0;
-        }
-
-        Map<String, Double> smaller = left.size() <= right.size() ? left : right;
-        Map<String, Double> larger = left.size() <= right.size() ? right : left;
-
-        double dot = 0.0;
-        for (Map.Entry<String, Double> entry : smaller.entrySet()) {
-            dot += entry.getValue() * larger.getOrDefault(entry.getKey(), 0.0);
-        }
-        return dot / (leftNorm * rightNorm);
-    }
-
-    private static double calculateJaccard(Set<String> left, Set<String> right) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return 0.0;
-        }
-
-        int intersection = 0;
-        Set<String> smaller = left.size() <= right.size() ? left : right;
-        Set<String> larger = left.size() <= right.size() ? right : left;
-        for (String token : smaller) {
-            if (larger.contains(token)) {
-                intersection++;
-            }
-        }
-
-        int union = left.size() + right.size() - intersection;
-        if (union == 0) {
-            return 0.0;
-        }
-        return (double) intersection / union;
-    }
-
-    private static double calculateSoftTokenOverlap(Set<String> left, Set<String> right) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return 0.0;
-        }
-
-        Set<String> smaller = left.size() <= right.size() ? left : right;
-        Set<String> larger = left.size() <= right.size() ? right : left;
-        int matches = 0;
-
-        for (String leftToken : smaller) {
-            for (String rightToken : larger) {
-                if (tokensApproximatelyMatch(leftToken, rightToken)) {
-                    matches++;
-                    break;
-                }
-            }
-        }
-
-        int denominator = Math.max(left.size(), right.size());
-        if (denominator == 0) {
-            return 0.0;
-        }
-        return (double) matches / denominator;
-    }
-
-    private static boolean tokensApproximatelyMatch(String left, String right) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return false;
-        }
-        if (left.equals(right)) {
-            return true;
-        }
-
-        if (left.length() >= APPROX_TOKEN_MIN_LENGTH && right.length() >= APPROX_TOKEN_MIN_LENGTH) {
-            if (left.startsWith(right) || right.startsWith(left)) {
-                return true;
-            }
-
-            return levenshteinDistanceWithinLimit(left, right, APPROX_MAX_EDIT_DISTANCE);
-        }
-        return false;
-    }
-
-    private static boolean levenshteinDistanceWithinLimit(String left, String right, int maxDistance) {
-        if (left == null || right == null) {
-            return false;
-        }
-        int leftLength = left.length();
-        int rightLength = right.length();
-
-        if (Math.abs(leftLength - rightLength) > maxDistance) {
-            return false;
-        }
-
-        int[] previous = new int[rightLength + 1];
-        int[] current = new int[rightLength + 1];
-
-        for (int j = 0; j <= rightLength; j++) {
-            previous[j] = j;
-        }
-
-        for (int i = 1; i <= leftLength; i++) {
-            current[0] = i;
-            int rowMin = current[0];
-
-            for (int j = 1; j <= rightLength; j++) {
-                int substitutionCost = left.charAt(i - 1) == right.charAt(j - 1) ? 0 : 1;
-                int deletion = previous[j] + 1;
-                int insertion = current[j - 1] + 1;
-                int substitution = previous[j - 1] + substitutionCost;
-                int best = Math.min(Math.min(deletion, insertion), substitution);
-                current[j] = best;
-
-                if (best < rowMin) {
-                    rowMin = best;
-                }
-            }
-
-            if (rowMin > maxDistance) {
-                return false;
-            }
-
-            int[] swap = previous;
-            previous = current;
-            current = swap;
-        }
-
-        return previous[rightLength] <= maxDistance;
-    }
-
     private static List<String> tokenize(String text) {
         List<String> tokens = new ArrayList<>();
         if (text == null || text.isBlank()) {
@@ -574,93 +325,89 @@ public class SecurityClassifier {
         return normalized;
     }
 
-    private static boolean hasAnyToken(Set<String> tokens, Set<String> expected) {
-        if (tokens == null || tokens.isEmpty() || expected == null || expected.isEmpty()) {
-            return false;
-        }
-
-        for (String token : tokens) {
-            if (expected.contains(token)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Map<String, Integer> buildTermFrequency(List<String> tokens) {
-        Map<String, Integer> tf = new HashMap<>();
-        if (tokens == null || tokens.isEmpty()) {
-            return tf;
-        }
-
-        for (String token : tokens) {
-            tf.merge(token, 1, Integer::sum);
-        }
-        return tf;
-    }
-
     // =========================================================================
     // Integração Qwen / Ollama
     // =========================================================================
 
     /**
-     * Seleciona os top-K exemplos por categoria para compor o contexto few-shot enviado ao Qwen.
-     * Ordena cada lista de categoria por hybridScore decrescente e retém os K melhores.
+     * Interseção direta: conta quantos tokens do prompt existem em cada exemplo do BASE.json.
+     * Retorna o exemplo com maior contagem de palavras coincidentes.
      */
-    private static List<ScoredExample> selectTopExamplesPerCategory(List<ScoredExample> all, int maxPerCategory) {
-        Map<String, List<ScoredExample>> byCategory = new HashMap<>();
-        for (ScoredExample se : all) {
-            byCategory.computeIfAbsent(se.example.category, k -> new ArrayList<>()).add(se);
+    private static KeywordMatchResult keywordIntersectionScan(Set<String> promptTokens, List<PromptExample> db) {
+        PromptExample bestExample = null;
+        int bestCount = 0;
+        for (PromptExample example : db) {
+            int count = 0;
+            for (String token : promptTokens) {
+                if (example.tokens.contains(token)) {
+                    count++;
+                }
+            }
+            if (count > bestCount) {
+                bestCount = count;
+                bestExample = example;
+            }
         }
-        List<ScoredExample> result = new ArrayList<>();
-        for (List<ScoredExample> catList : byCategory.values()) {
-            catList.sort((a, b) -> Double.compare(b.hybridScore, a.hybridScore));
-            int take = Math.min(maxPerCategory, catList.size());
-            result.addAll(catList.subList(0, take));
-        }
-        return result;
-    }
-
-    /**
-     * Monta o prompt few-shot para o Qwen usando exemplos recuperados do BASE.json como contexto.
-     */
-    private static String buildQwenPrompt(String userPrompt, List<ScoredExample> examples) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Você é um classificador de segurança para operações de infraestrutura Kubernetes.\n");
-        sb.append("Classifique a solicitação do usuário em UMA das categorias abaixo.\n");
-        sb.append("Responda APENAS com o nome exato da categoria, sem explicação adicional.\n\n");
-        sb.append("Categorias:\n");
-        sb.append("SAFE      - consulta somente-leitura (listar, descrever, obter status, verificar logs)\n");
-        sb.append("SUSPECT   - ação que modifica ou remove recursos (deletar, remover, aplicar, escalar para zero)\n");
-        sb.append("RISKY     - ação que afeta recursos críticos, produção, acesso privilegiado ou mudanças em massa\n");
-        sb.append("UNSAFE    - operação claramente destrutiva, maliciosa ou que viola política de segurança\n");
-        sb.append("UNCERTAIN - intenção ambígua ou informação insuficiente para classificar\n\n");
-        sb.append("Exemplos de referência extraídos da base de conhecimento:\n");
-        for (ScoredExample se : examples) {
-            sb.append("[")
-              .append(se.example.category)
-              .append("] ")
-              .append(se.example.text)
-              .append("\n");
-        }
-        sb.append("\nSolicitação a classificar: ").append(userPrompt).append("\nCategoria:");
-        return sb.toString();
-    }
-
-    /**
-     * Envia prompt com contexto few-shot para o Qwen via API do Ollama e retorna a categoria.
-     * Retorna null se o Ollama estiver indisponível ou a resposta for inválida.
-     */
-    private String classifyWithQwen(String userPrompt, List<ScoredExample> contextExamples) {
-        if (contextExamples == null || contextExamples.isEmpty()) {
+        if (bestExample == null) {
             return null;
         }
-        String prompt = buildQwenPrompt(userPrompt, contextExamples);
+        return new KeywordMatchResult(bestExample.category, bestCount, bestExample);
+    }
+
+    /**
+     * Varredura heurística completa (prompts longos): usa Jaccard para normalizar a interseção
+     * pelo tamanho dos conjuntos, evitando bias por exemplos com muitos tokens.
+     */
+    private static KeywordMatchResult fullHeuristicScan(Set<String> promptTokens, List<PromptExample> db) {
+        PromptExample bestExample = null;
+        double bestScore = 0.0;
+        int bestCount = 0;
+        for (PromptExample example : db) {
+            int count = 0;
+            for (String token : promptTokens) {
+                if (example.tokens.contains(token)) {
+                    count++;
+                }
+            }
+            if (count == 0) {
+                continue;
+            }
+            int union = promptTokens.size() + example.tokens.size() - count;
+            double jaccard = union > 0 ? (double) count / union : 0.0;
+            if (jaccard > bestScore) {
+                bestScore = jaccard;
+                bestExample = example;
+                bestCount = count;
+            }
+        }
+        if (bestExample == null) {
+            return null;
+        }
+        return new KeywordMatchResult(bestExample.category, bestCount, bestExample);
+    }
+
+    /**
+     * Double-check Qwen: envia prompt mínimo pedindo confirmação da categoria já detectada.
+     * Retorna null se o Ollama estiver indisponível ou a resposta for inválida.
+     */
+    private String qwenDoubleCheck(String userPrompt, String candidateCategory, String matchedExampleText) {
+        String prompt = buildDoubleCheckPrompt(userPrompt, candidateCategory, matchedExampleText);
         String rawResponse = callOllamaGenerate(prompt);
         if (rawResponse == null || rawResponse.isBlank()) {
             return null;
         }
         return extractCategoryFromText(rawResponse);
+    }
+
+    /**
+     * Monta prompt mínimo para o Qwen: apenas referência, categoria candidata e o prompt recebido.
+     * Mantém o payload curto para reduzir latência de inferência em CPU.
+     */
+    private static String buildDoubleCheckPrompt(String userPrompt, String candidateCategory, String matchedExampleText) {
+        return "Classifique em UMA palavra: SAFE, SUSPECT, RISKY, UNSAFE ou UNCERTAIN.\n"
+                + "Referência: \"" + matchedExampleText + "\" → " + candidateCategory + "\n"
+                + "Comando: \"" + userPrompt + "\"\n"
+                + "Categoria:";
     }
 
     /**
@@ -824,16 +571,6 @@ public class SecurityClassifier {
      * Constrói limiares híbridos por categoria.
      * Categorias de maior risco usam valor mais baixo (mais sensíveis à evidência).
      */
-    private static Map<String, Double> buildCategoryThresholds() {
-        Map<String, Double> m = new HashMap<>();
-        m.put("UNSAFE",    0.05);  // máxima sensibilidade: qualquer evidência é relevante
-        m.put("RISKY",     0.06);
-        m.put("SUSPECT",   0.06);
-        m.put("SAFE",      0.09);  // requer evidência mais sólida para declarar seguro
-        m.put("UNCERTAIN", 1.0);   // não é retornado por limiar
-        return Collections.unmodifiableMap(m);
-    }
-
     // =========================================================================
     // Mapa canônico de tokens
     // =========================================================================
@@ -911,31 +648,23 @@ public class SecurityClassifier {
         final String text;
         final String category;
         final Set<String> tokens;
-        final Map<String, Integer> termFrequency;
-        Map<String, Double> vector;
-        double vectorNorm;
 
-        PromptExample(String text, String category, Set<String> tokens, Map<String, Integer> termFrequency) {
+        PromptExample(String text, String category, Set<String> tokens) {
             this.text = text;
             this.category = category;
             this.tokens = tokens;
-            this.termFrequency = termFrequency;
-            this.vector = Collections.emptyMap();
-            this.vectorNorm = 0.0;
         }
     }
 
-    private static class ScoredExample {
-        final PromptExample example;
-        final double heuristicScore;
-        final double semanticScore;
-        final double hybridScore;
+    private static class KeywordMatchResult {
+        final String category;
+        final int matchCount;
+        final PromptExample bestExample;
 
-        ScoredExample(PromptExample example, double heuristicScore, double semanticScore, double hybridScore) {
-            this.example = example;
-            this.heuristicScore = heuristicScore;
-            this.semanticScore = semanticScore;
-            this.hybridScore = hybridScore;
+        KeywordMatchResult(String category, int matchCount, PromptExample bestExample) {
+            this.category = category;
+            this.matchCount = matchCount;
+            this.bestExample = bestExample;
         }
     }
 }
