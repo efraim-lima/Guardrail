@@ -480,16 +480,22 @@ public class SecurityClassifier {
                 continue;
             }
 
-            String normalized = normalizeToken(token);
-            if (normalized.length() < 3) {
+            String normalizedBase = normalizeBaseToken(token);
+            if (normalizedBase.isEmpty()) {
                 continue;
             }
-            tokens.add(normalized);
+
+            String canonical = TOKEN_CANONICAL_MAP.getOrDefault(normalizedBase, normalizedBase);
+            boolean wasCanonicalMapped = !canonical.equals(normalizedBase);
+            if (canonical.length() < 3 && !wasCanonicalMapped) {
+                continue;
+            }
+            tokens.add(canonical);
         }
         return tokens;
     }
 
-    private static String normalizeToken(String token) {
+    private static String normalizeBaseToken(String token) {
         if (token == null || token.isBlank()) {
             return "";
         }
@@ -501,8 +507,7 @@ public class SecurityClassifier {
         if (normalized.length() > 4 && normalized.endsWith("s")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
-
-        return TOKEN_CANONICAL_MAP.getOrDefault(normalized, normalized);
+        return normalized;
     }
 
     private static boolean hasAnyToken(Set<String> tokens, Set<String> expected) {

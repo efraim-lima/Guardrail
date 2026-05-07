@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * PromptValidator
@@ -33,6 +35,12 @@ public class PromptValidator implements Runnable {
     private static final String LOG_PREFIX         = "[PromptWebhook]";
     private static final long   RESULT_POLL_TIMEOUT = Long.parseLong(
             envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "150"));
+    private static final Pattern USER_MESSAGE_BLOCK_PATTERN = Pattern.compile(
+        "\\\"role\\\"\\s*:\\s*\\\"user\\\"[\\s\\S]*?\\\"content\\\"\\s*:\\s*\\\"((?:\\\\\\.|[^\\\\\"])*)\\\"",
+        Pattern.CASE_INSENSITIVE);
+    private static final Pattern GENERIC_CONTENT_PATTERN = Pattern.compile(
+        "\\\"content\\\"\\s*:\\s*\\\"((?:\\\\\\.|[^\\\\\"])*)\\\"",
+        Pattern.CASE_INSENSITIVE);
 
     private final int              port;
     private final String           path;
@@ -274,10 +282,111 @@ public class PromptValidator implements Runnable {
             if (fromMessage != null && !fromMessage.isBlank()) {
                 return fromMessage;
             }
+
+            String fromLastUserMessage = extractLastUserMessage(body);
+            if (fromLastUserMessage != null && !fromLastUserMessage.isBlank()) {
+                return fromLastUserMessage;
+            }
+
+            String fromLastContent = extractLastContentField(body);
+            if (fromLastContent != null && !fromLastContent.isBlank()) {
+                return fromLastContent;
+            }
             return null;
         }
 
         return body.trim();
+    }
+
+    private static String extractLastUserMessage(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = USER_MESSAGE_BLOCK_PATTERN.matcher(json);
+        String last = null;
+        while (matcher.find()) {
+            last = unescapeJsonString(matcher.group(1));
+        }
+        return last;
+    }
+
+    private static String extractLastContentField(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = GENERIC_CONTENT_PATTERN.matcher(json);
+        String last = null;
+        while (matcher.find()) {
+            last = unescapeJsonString(matcher.group(1));
+        }
+        return last;
+    }
+
+    private static String unescapeJsonString(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != '\\') {
+                out.append(c);
+                continue;
+            }
+
+            if (i + 1 >= value.length()) {
+                out.append('\\');
+                break;
+            }
+
+            char next = value.charAt(++i);
+            switch (next) {
+                case '"':
+                    out.append('"');
+                    break;
+                case '\\':
+                    out.append('\\');
+                    break;
+                case '/':
+                    out.append('/');
+                    break;
+                case 'b':
+                    out.append('\b');
+                    break;
+                case 'f':
+                    out.append('\f');
+                    break;
+                case 'n':
+                    out.append('\n');
+                    break;
+                case 'r':
+                    out.append('\r');
+                    break;
+                case 't':
+                    out.append('\t');
+                    break;
+                case 'u':
+                    if (i + 4 < value.length()) {
+                        String hex = value.substring(i + 1, i + 5);
+                        try {
+                            out.append((char) Integer.parseInt(hex, 16));
+                            i += 4;
+                        } catch (NumberFormatException ex) {
+                            out.append('u');
+                        }
+                    } else {
+                        out.append('u');
+                    }
+                    break;
+                default:
+                    out.append(next);
+                    break;
+            }
+        }
+        return out.toString();
     }
 
     private static String extractJsonStringField(String json, String field) {
