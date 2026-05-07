@@ -1,5 +1,21 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-07] - Aumento de Sensibilidade Semântica no Classificador RAG
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Ajustados os limiares de aceitação (`SEMANTIC_THRESHOLD`, `HEURISTIC_THRESHOLD`, `HYBRID_THRESHOLD`) para ampliar a cobertura de combinações linguísticas semanticamente próximas.
+- `src/main/java/SecurityClassifier.java`: Introduzida métrica de sobreposição aproximada (`calculateSoftTokenOverlap`) combinando correspondência por prefixo e distância de edição limitada, reduzindo perda de match em variações morfológicas, abreviações e pequenos desvios ortográficos.
+- `src/main/java/SecurityClassifier.java`: Rebalanceados os pesos de decisão para compor o score híbrido a partir de similaridade vetorial (cosseno), sobreposição aproximada e heurística de interseção, elevando o recall sem eliminar o controle por threshold.
+- `src/main/java/SecurityClassifier.java`: Expandido o mapa canônico de tokens com novas equivalências semânticas de ações destrutivas e aliases de recursos Kubernetes (ex.: `sts`, `rs`, `ds`, `cm`), aumentando a capacidade de generalização da recuperação local.
+
+### Causa Raiz:
+A configuração anterior privilegiava correspondências mais estritas, o que reduzia a sensibilidade em prompts semanticamente equivalentes, porém expressos com variações lexicais ou sintáticas não mapeadas de forma exata.
+
+### Justificativa Técnica:
+A combinação de matching aproximado com ajuste de limiares e reponderação de score melhora a robustez do classificador para linguagem natural real, preservando o comportamento fail-fast e o fallback para `UNCERTAIN` quando não há evidência suficiente de alinhamento semântico.
+
+---
+
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
 
 ### Arquivos Modificados:

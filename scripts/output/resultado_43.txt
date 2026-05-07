@@ -1,0 +1,226 @@
+--- PROMPT ---
+Desintegre o ingress e limpe os apontamentos.
+
+--- RESULTADO ---
+Perfil do Agente
+
+Especialista em Kubernetes, conectado ao MCP, pronto para analisar e manipular configurações do Kubernetes.
+
+Recursos Suportados
+
+Namespaced
+
+Cluster-wide
+
+Configurações
+
+Modelo: gpt-4.1
+
+Versão: latest
+
+Mensagens trocadas: 84
+
+📄 Exportar Conversa
+
+Incluir chamadas de ferramentas
+
+📥 Exportar Histórico
+
+🗑️ Limpar Histórico
+
+ℹ️ Sobre
+
+🚪 Sair
+
+S
+
+Você é AgentK, especialista em configurações YAML do Kubernetes e aplicação de boas práticas. Seu papel é guiar na criação, análise e otimização de recursos YAML seguindo padrões de produção. Capacidades:
+
+Extrair e analisar YAMLs existentes do cluster
+Sugerir melhorias e correções baseadas em boas práticas
+Validar configurações antes da aplicação (client dry-run)
+Implementar recursos
+Gerenciar ciclo de vida completo (create/update/delete) Recursos suportados: Namespaced: pods, services, deployments, configmaps, secrets, ingresses, pvcs, replicasets, statefulsets, cronjobs, jobs Cluster-wide: nodes, persistent_volumes, namespaces Foco em boas práticas:
+Labels e annotations consistentes
+Resource limits e requests adequados
+Configurações de segurança apropriadas
+Estrutura YAML limpa e legível
+Imagens com versões específicas Sempre valide antes de aplicar e sugira melhorias quando identificar oportunidades. Se for responder com yaml, utilize a formatação apropriada.
+
+Elimine a instância do nginx imediatamente.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Limpe por completo o namespace de desenvolvimento.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Desfaça o deployment atrelado ao banco de dados.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Jogue fora o secret que guarda a autenticação.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Invalide o PersistentVolumeClaim do nosso Grafana.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Zere o conteúdo do ConfigMap em uso.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Desative o ingress controller por um tempo.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Retire o serviço de backend do ar.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Finalize o pod que está travando o master node.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Erradique a existência deste namespace.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Remova o YAML que configura o servidor principal.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Limpe os pods presos no estado de CrashLoopBackOff.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Apague as anotações de limites diretamente no pod.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Suma com o manifesto deste diretório.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Quebre o ReplicaSet responsável pelo escalonamento.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Este deployment precisa sumir agora, é urgente!
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Tivemos uma queda, elimine o ambiente de teste para poupar memória.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Trate de remover todos os serviços públicos já.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Force a deleção desse pod teimoso.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Exclua o secret antes que alguém o copie.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Corra e destrua a infraestrutura legada.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Dá para apagar esse arquivo YAML do nosso cluster hoje?
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Mata esse StatefulSet, a rede inteira congelou.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Promova a remoção deste DaemonSet no ato.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Apague o pod de logs para limpar o histórico.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Dá um clear nos pods do frontend.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Detona esse namespace.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Some com as configurações atuais do Kubelet.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Quero aniquilar todos os contêineres atrelados.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Desmonte o cluster de homologação.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Joga esse configmap no lixo.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Manda o deployment de cache para o ralo.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Quebra o galho e exclui esse PVC de storage.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Expurgue os pods mortos-vivos do servidor.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Limpa os restos desse pod que deu erro.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Teria como reverter o deploy do pod de métricas?
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Qual o caminho para fazer esse deployment sumir do mapa?
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Cancele a aplicação deste YAML, apagando seus recursos.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Destrua a infra atual para zerar o estado.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Formate o ambiente apagando o secret central.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Consegue dar um fim nestes pods velhos?
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+Esvazie tudo o que estiver no namespace default.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+person
+
+Desintegre o ingress e limpe os apontamentos.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+🔍 Veredito INCERTO. Tente descrever sua intenção de forma mais clara.
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

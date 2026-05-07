@@ -21,10 +21,12 @@ public class SecurityClassifier {
     private static final String DEFAULT_REFERENCE_FALLBACK_PATH = "src/main/java/BASE.json";
     private static final int MAX_CACHE_SIZE = 100;
 
-    private static final double SEMANTIC_THRESHOLD = 0.12;
-    private static final double HEURISTIC_THRESHOLD = 0.08;
-    private static final double HYBRID_THRESHOLD = 0.10;
+    private static final double SEMANTIC_THRESHOLD = 0.09;
+    private static final double HEURISTIC_THRESHOLD = 0.06;
+    private static final double HYBRID_THRESHOLD = 0.08;
     private static final double SUSPICIOUS_INTENT_BOOST = 0.12;
+    private static final int APPROX_TOKEN_MIN_LENGTH = 4;
+    private static final int APPROX_MAX_EDIT_DISTANCE = 1;
 
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("\\W+");
     private static final Pattern NON_ASCII_MARKS_PATTERN = Pattern.compile("\\p{M}+");
@@ -91,9 +93,14 @@ public class SecurityClassifier {
 
         ScoredExample best = null;
         for (PromptExample example : dbCopy) {
-            double heuristicScore = calculateJaccard(promptTokens, example.tokens);
-            double semanticScore = calculateCosineSimilarity(promptVector, promptNorm, example.vector, example.vectorNorm);
-            double hybridScore = (0.55 * semanticScore) + (0.45 * heuristicScore);
+            double exactJaccard = calculateJaccard(promptTokens, example.tokens);
+            double softOverlap = calculateSoftTokenOverlap(promptTokens, example.tokens);
+            double heuristicScore = Math.max(exactJaccard, softOverlap * 0.92);
+
+            double cosineSimilarity = calculateCosineSimilarity(promptVector, promptNorm, example.vector, example.vectorNorm);
+            double semanticScore = (0.78 * cosineSimilarity) + (0.22 * softOverlap);
+
+            double hybridScore = (0.62 * semanticScore) + (0.38 * heuristicScore);
 
             if (promptHasDeleteIntent && promptHasK8sResource && "SUSPECT".equals(example.category)) {
                 hybridScore += SUSPICIOUS_INTENT_BOOST;
@@ -371,6 +378,96 @@ public class SecurityClassifier {
         return (double) intersection / union;
     }
 
+    private static double calculateSoftTokenOverlap(Set<String> left, Set<String> right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return 0.0;
+        }
+
+        Set<String> smaller = left.size() <= right.size() ? left : right;
+        Set<String> larger = left.size() <= right.size() ? right : left;
+        int matches = 0;
+
+        for (String leftToken : smaller) {
+            for (String rightToken : larger) {
+                if (tokensApproximatelyMatch(leftToken, rightToken)) {
+                    matches++;
+                    break;
+                }
+            }
+        }
+
+        int denominator = Math.max(left.size(), right.size());
+        if (denominator == 0) {
+            return 0.0;
+        }
+        return (double) matches / denominator;
+    }
+
+    private static boolean tokensApproximatelyMatch(String left, String right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return false;
+        }
+        if (left.equals(right)) {
+            return true;
+        }
+
+        if (left.length() >= APPROX_TOKEN_MIN_LENGTH && right.length() >= APPROX_TOKEN_MIN_LENGTH) {
+            if (left.startsWith(right) || right.startsWith(left)) {
+                return true;
+            }
+
+            return levenshteinDistanceWithinLimit(left, right, APPROX_MAX_EDIT_DISTANCE);
+        }
+        return false;
+    }
+
+    private static boolean levenshteinDistanceWithinLimit(String left, String right, int maxDistance) {
+        if (left == null || right == null) {
+            return false;
+        }
+        int leftLength = left.length();
+        int rightLength = right.length();
+
+        if (Math.abs(leftLength - rightLength) > maxDistance) {
+            return false;
+        }
+
+        int[] previous = new int[rightLength + 1];
+        int[] current = new int[rightLength + 1];
+
+        for (int j = 0; j <= rightLength; j++) {
+            previous[j] = j;
+        }
+
+        for (int i = 1; i <= leftLength; i++) {
+            current[0] = i;
+            int rowMin = current[0];
+
+            for (int j = 1; j <= rightLength; j++) {
+                int substitutionCost = left.charAt(i - 1) == right.charAt(j - 1) ? 0 : 1;
+                int deletion = previous[j] + 1;
+                int insertion = current[j - 1] + 1;
+                int substitution = previous[j - 1] + substitutionCost;
+                int best = Math.min(Math.min(deletion, insertion), substitution);
+                current[j] = best;
+
+                if (best < rowMin) {
+                    rowMin = best;
+                }
+            }
+
+            if (rowMin > maxDistance) {
+                return false;
+            }
+
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+
+        return previous[rightLength] <= maxDistance;
+    }
+
     private static List<String> tokenize(String text) {
         List<String> tokens = new ArrayList<>();
         if (text == null || text.isBlank()) {
@@ -440,6 +537,9 @@ public class SecurityClassifier {
         map.put("deletar", "delete_action");
         map.put("deleta", "delete_action");
         map.put("deletando", "delete_action");
+        map.put("delecao", "delete_action");
+        map.put("deletado", "delete_action");
+        map.put("deletada", "delete_action");
         map.put("apaga", "delete_action");
         map.put("apagar", "delete_action");
         map.put("apague", "delete_action");
@@ -466,12 +566,19 @@ public class SecurityClassifier {
 
         map.put("destrua", "destroy_action");
         map.put("destruir", "destroy_action");
+        map.put("destruicao", "destroy_action");
+        map.put("extinguir", "destroy_action");
+        map.put("extingue", "destroy_action");
         map.put("mate", "destroy_action");
         map.put("matar", "destroy_action");
 
         map.put("ns", "namespace");
         map.put("deploy", "deployment");
         map.put("deployament", "deployment");
+        map.put("sts", "statefulset");
+        map.put("rs", "replicaset");
+        map.put("ds", "daemonset");
+        map.put("cm", "configmap");
         map.put("svc", "service");
         map.put("pv", "persistentvolume");
         map.put("pvc", "pvc");
