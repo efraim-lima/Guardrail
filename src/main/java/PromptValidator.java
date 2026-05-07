@@ -208,7 +208,19 @@ public class PromptValidator implements Runnable {
                 }
 
                 String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+
+                long pollStartMs = System.currentTimeMillis();
+                log("Long-poll recebido: job=" + jobId
+                        + " sourceIp=" + sourceIp
+                        + " timeout=" + RESULT_POLL_TIMEOUT + "s"
+                        + " already_done=" + jobQueue.isDone(jobId));
+
                 OllamaJobQueue.AwaitResult result = jobQueue.awaitResult(jobId, RESULT_POLL_TIMEOUT);
+                long pollElapsedMs = System.currentTimeMillis() - pollStartMs;
+
+                log("Long-poll retornou: job=" + jobId
+                        + " status=" + result.status
+                        + " elapsed_ms=" + pollElapsedMs);
 
                 switch (result.status) {
                     case DONE:

@@ -175,14 +175,22 @@ public class OllamaJobQueue {
             return new AwaitResult(AwaitStatus.NOT_FOUND, null, null);
         }
 
+        long pollStartMs = System.currentTimeMillis();
+        log("Long-poll aguardando: job=" + jobId + " timeout=" + timeoutSeconds + "s"
+                + " already_done=" + entry.future.isDone());
         try {
             String verdict = entry.future.get(timeoutSeconds, TimeUnit.SECONDS);
+            long elapsed = System.currentTimeMillis() - pollStartMs;
+            log("Long-poll resolvido: job=" + jobId + " elapsed=" + elapsed + "ms status=DONE");
             return new AwaitResult(AwaitStatus.DONE, verdict, entry.prompt);
         } catch (TimeoutException e) {
+            long elapsed = System.currentTimeMillis() - pollStartMs;
+            log("Long-poll expirou: job=" + jobId + " elapsed=" + elapsed + "ms timeout=" + timeoutSeconds + "s");
             // Job ainda em processamento: cliente deve retentar o long-poll
             return new AwaitResult(AwaitStatus.PROCESSING, null, null);
         } catch (ExecutionException e) {
-            logError("Falha no job " + jobId + ": "
+            long elapsed = System.currentTimeMillis() - pollStartMs;
+            logError("Long-poll falhou: job=" + jobId + " elapsed=" + elapsed + "ms reason="
                     + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
             return new AwaitResult(AwaitStatus.DONE, "UNCERTAIN", entry.prompt);
         }
