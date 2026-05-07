@@ -36,6 +36,8 @@ COPY ${GATEWAY_JAR} app.jar
 COPY config/ config/
 COPY inspection-terms.xml .
 COPY monitored-sites.xml .
+# Base de conhecimento para classificação RAG + contexto Qwen
+COPY src/main/java/BASE.json BASE.json
 
 # Script de entrypoint: configura iptables → inicia gateway
 COPY docker-entrypoint.sh .

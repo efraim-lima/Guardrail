@@ -33,10 +33,11 @@ services:
       - WEBHOOK_PATH=/validar
       - OLLAMA_ENDPOINT=http://ollama:11434/api/generate
       - OLLAMA_MODEL=qwen2.5:1.5b
+      - QWEN_CLASSIFICATION_ENABLED=true
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
       - GATEWAY_MITM_PORT=8443
-      - REFERENCE_PROMPTS_PATH=/app/PROMPTS.md
+      - REFERENCE_PROMPTS_PATH=/app/BASE.json
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro

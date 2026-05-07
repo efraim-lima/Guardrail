@@ -1,4 +1,9 @@
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,12 +26,32 @@ public class SecurityClassifier {
     private static final String DEFAULT_REFERENCE_FALLBACK_PATH = "src/main/java/BASE.json";
     private static final int MAX_CACHE_SIZE = 100;
 
+    // --- Thresholds de classificação local (fallback sem Qwen) ---
     private static final double SEMANTIC_THRESHOLD = 0.09;
     private static final double HEURISTIC_THRESHOLD = 0.06;
     private static final double HYBRID_THRESHOLD = 0.08;
     private static final double SUSPICIOUS_INTENT_BOOST = 0.12;
+    // Score a partir do qual o RAG local é considerado de alta confiança (pula o Qwen)
+    private static final double HIGH_CONFIDENCE_LOCAL_THRESHOLD = 0.45;
     private static final int APPROX_TOKEN_MIN_LENGTH = 4;
     private static final int APPROX_MAX_EDIT_DISTANCE = 1;
+
+    // --- Limiares híbridos por categoria (RAG local) ---
+    // Categorias de maior risco usam limiar mais baixo (err on the side of caution)
+    private static final Map<String, Double> CATEGORY_HYBRID_THRESHOLDS = buildCategoryThresholds();
+
+    // --- Integração Qwen / Ollama ---
+    private static final String DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate";
+    private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
+    private static final int QWEN_CONTEXT_EXAMPLES_PER_CLASS = 2;
+    private static final int OLLAMA_CONNECT_TIMEOUT_MS = 3000;
+    private static final int OLLAMA_READ_TIMEOUT_MS = 20000;
+
+    private static final Pattern OLLAMA_RESPONSE_FIELD = Pattern.compile(
+            "\"response\"\\s*:\\s*\"((?:\\\\\\.|[^\\\\\"])*)\"",
+            Pattern.CASE_INSENSITIVE);
+    private static final Set<String> VALID_CATEGORIES = Set.of(
+            "SAFE", "SUSPECT", "RISKY", "UNSAFE", "UNCERTAIN");
 
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("\\W+");
     private static final Pattern NON_ASCII_MARKS_PATTERN = Pattern.compile("\\p{M}+");
@@ -51,8 +76,18 @@ public class SecurityClassifier {
         }
     });
 
+    private final boolean qwenEnabled;
+    private final String ollamaEndpoint;
+    private final String ollamaModel;
+
     public SecurityClassifier() {
+        this.qwenEnabled = Boolean.parseBoolean(envOr("QWEN_CLASSIFICATION_ENABLED", "true"));
+        this.ollamaEndpoint = envOr("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT);
+        this.ollamaModel = envOr("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL);
         initializeDatabase();
+        if (qwenEnabled) {
+            log("Classificação via Qwen ativada. Endpoint=" + ollamaEndpoint + ", modelo=" + ollamaModel);
+        }
     }
 
     public String classify(String userPrompt) {
@@ -91,7 +126,10 @@ public class SecurityClassifier {
         boolean promptHasDeleteIntent = hasAnyToken(promptTokens, DELETE_INTENT_TOKENS);
         boolean promptHasK8sResource = hasAnyToken(promptTokens, K8S_RESOURCE_TOKENS);
 
+        // Coleta todos os exemplos pontuados para selecionar contexto few-shot ao Qwen
+        List<ScoredExample> allScored = qwenEnabled ? new ArrayList<>(dbCopy.size()) : null;
         ScoredExample best = null;
+
         for (PromptExample example : dbCopy) {
             double exactJaccard = calculateJaccard(promptTokens, example.tokens);
             double softOverlap = calculateSoftTokenOverlap(promptTokens, example.tokens);
@@ -110,6 +148,9 @@ public class SecurityClassifier {
             if (best == null || current.hybridScore > best.hybridScore) {
                 best = current;
             }
+            if (allScored != null) {
+                allScored.add(current);
+            }
         }
 
         if (best == null) {
@@ -117,9 +158,31 @@ public class SecurityClassifier {
             return "UNCERTAIN";
         }
 
+        // --- Caminho rápido: confiança local alta, pula o Qwen ---
+        if (best.hybridScore >= HIGH_CONFIDENCE_LOCAL_THRESHOLD) {
+            String fastResult = best.example.category;
+            cache.put(normalizedPrompt, fastResult);
+            return fastResult;
+        }
+
+        // --- Classificação via Qwen com contexto do BASE.json ---
+        if (qwenEnabled && allScored != null) {
+            List<ScoredExample> contextExamples = selectTopExamplesPerCategory(allScored, QWEN_CONTEXT_EXAMPLES_PER_CLASS);
+            String qwenResult = classifyWithQwen(normalizedPrompt, contextExamples);
+            if (qwenResult != null) {
+                log("Qwen classificou: [" + qwenResult + "] para prompt: " + normalizedPrompt);
+                cache.put(normalizedPrompt, qwenResult);
+                return qwenResult;
+            }
+            log("Qwen indisponível ou sem resposta válida, usando fallback RAG local.");
+        }
+
+        // --- Fallback: RAG local com limiares por categoria ---
+        double categoryThreshold = CATEGORY_HYBRID_THRESHOLDS.getOrDefault(
+                best.example.category, HYBRID_THRESHOLD);
         boolean hasHeuristicMatch = best.heuristicScore >= HEURISTIC_THRESHOLD;
-        boolean hasSemanticMatch = best.semanticScore >= SEMANTIC_THRESHOLD;
-        boolean hasHybridMatch = best.hybridScore >= HYBRID_THRESHOLD;
+        boolean hasSemanticMatch  = best.semanticScore  >= SEMANTIC_THRESHOLD;
+        boolean hasHybridMatch    = best.hybridScore    >= categoryThreshold;
 
         if (!hasHeuristicMatch && !hasSemanticMatch && !hasHybridMatch) {
             cache.put(normalizedPrompt, "UNCERTAIN");
@@ -534,6 +597,194 @@ public class SecurityClassifier {
         }
         return tf;
     }
+
+    // =========================================================================
+    // Integração Qwen / Ollama
+    // =========================================================================
+
+    /**
+     * Seleciona os top-K exemplos por categoria para compor o contexto few-shot enviado ao Qwen.
+     * Ordena cada lista de categoria por hybridScore decrescente e retém os K melhores.
+     */
+    private static List<ScoredExample> selectTopExamplesPerCategory(List<ScoredExample> all, int maxPerCategory) {
+        Map<String, List<ScoredExample>> byCategory = new HashMap<>();
+        for (ScoredExample se : all) {
+            byCategory.computeIfAbsent(se.example.category, k -> new ArrayList<>()).add(se);
+        }
+        List<ScoredExample> result = new ArrayList<>();
+        for (List<ScoredExample> catList : byCategory.values()) {
+            catList.sort((a, b) -> Double.compare(b.hybridScore, a.hybridScore));
+            int take = Math.min(maxPerCategory, catList.size());
+            result.addAll(catList.subList(0, take));
+        }
+        return result;
+    }
+
+    /**
+     * Monta o prompt few-shot para o Qwen usando exemplos recuperados do BASE.json como contexto.
+     */
+    private static String buildQwenPrompt(String userPrompt, List<ScoredExample> examples) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Você é um classificador de segurança para operações de infraestrutura Kubernetes.\n");
+        sb.append("Classifique a solicitação do usuário em UMA das categorias abaixo.\n");
+        sb.append("Responda APENAS com o nome exato da categoria, sem explicação adicional.\n\n");
+        sb.append("Categorias:\n");
+        sb.append("SAFE      - consulta somente-leitura (listar, descrever, obter status, verificar logs)\n");
+        sb.append("SUSPECT   - ação que modifica ou remove recursos (deletar, remover, aplicar, escalar para zero)\n");
+        sb.append("RISKY     - ação que afeta recursos críticos, produção, acesso privilegiado ou mudanças em massa\n");
+        sb.append("UNSAFE    - operação claramente destrutiva, maliciosa ou que viola política de segurança\n");
+        sb.append("UNCERTAIN - intenção ambígua ou informação insuficiente para classificar\n\n");
+        sb.append("Exemplos de referência extraídos da base de conhecimento:\n");
+        for (ScoredExample se : examples) {
+            sb.append("[")
+              .append(se.example.category)
+              .append("] ")
+              .append(se.example.text)
+              .append("\n");
+        }
+        sb.append("\nSolicitação a classificar: ").append(userPrompt).append("\nCategoria:");
+        return sb.toString();
+    }
+
+    /**
+     * Envia prompt com contexto few-shot para o Qwen via API do Ollama e retorna a categoria.
+     * Retorna null se o Ollama estiver indisponível ou a resposta for inválida.
+     */
+    private String classifyWithQwen(String userPrompt, List<ScoredExample> contextExamples) {
+        if (contextExamples == null || contextExamples.isEmpty()) {
+            return null;
+        }
+        String prompt = buildQwenPrompt(userPrompt, contextExamples);
+        String rawResponse = callOllamaGenerate(prompt);
+        if (rawResponse == null || rawResponse.isBlank()) {
+            return null;
+        }
+        return extractCategoryFromText(rawResponse);
+    }
+
+    /**
+     * Realiza HTTP POST à API /api/generate do Ollama.
+     * Retorna o conteúdo do campo "response" ou null em caso de falha.
+     */
+    private String callOllamaGenerate(String promptText) {
+        try {
+            URL url = new URL(ollamaEndpoint);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(OLLAMA_CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(OLLAMA_READ_TIMEOUT_MS);
+
+            String body = "{\"model\":\"" + ollamaModel
+                    + "\",\"prompt\":\"" + escapeForJson(promptText)
+                    + "\",\"stream\":false}";
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                logError("Ollama retornou HTTP " + status + " para endpoint: " + ollamaEndpoint);
+                return null;
+            }
+
+            try (InputStream is = conn.getInputStream()) {
+                String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return extractOllamaResponseField(responseBody);
+            }
+        } catch (Exception e) {
+            logError("Falha ao chamar Ollama: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extrai o campo "response" do JSON retornado pelo Ollama.
+     */
+    private static String extractOllamaResponseField(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        Matcher m = OLLAMA_RESPONSE_FIELD.matcher(json);
+        if (m.find()) {
+            return unescapeJsonString(m.group(1)).trim();
+        }
+        // Fallback: retorna o JSON bruto para tentativa de extração direta
+        return json.trim();
+    }
+
+    /**
+     * Examina o texto de resposta do Qwen e extrai a primeira categoria válida encontrada.
+     */
+    private static String extractCategoryFromText(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String upper = text.trim().toUpperCase(Locale.ROOT);
+        // Resposta direta (mais comum): o modelo responde apenas a categoria
+        if (VALID_CATEGORIES.contains(upper)) {
+            return upper;
+        }
+        // Localiza a primeira ocorrência de qualquer categoria na resposta
+        int bestPos = Integer.MAX_VALUE;
+        String bestCat = null;
+        for (String cat : VALID_CATEGORIES) {
+            int pos = upper.indexOf(cat);
+            if (pos >= 0 && pos < bestPos) {
+                bestPos = pos;
+                bestCat = cat;
+            }
+        }
+        return bestCat;
+    }
+
+    /**
+     * Escapa uma string para uso seguro dentro de um valor JSON (campo de string).
+     */
+    private static String escapeForJson(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(text.length() + 16);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"':  sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n");  break;
+                case '\r': sb.append("\\r");  break;
+                case '\t': sb.append("\\t");  break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Constrói limiares híbridos por categoria.
+     * Categorias de maior risco usam valor mais baixo (mais sensíveis à evidência).
+     */
+    private static Map<String, Double> buildCategoryThresholds() {
+        Map<String, Double> m = new HashMap<>();
+        m.put("UNSAFE",    0.05);  // máxima sensibilidade: qualquer evidência é relevante
+        m.put("RISKY",     0.06);
+        m.put("SUSPECT",   0.06);
+        m.put("SAFE",      0.09);  // requer evidência mais sólida para declarar seguro
+        m.put("UNCERTAIN", 1.0);   // não é retornado por limiar
+        return Collections.unmodifiableMap(m);
+    }
+
+    // =========================================================================
+    // Mapa canônico de tokens
+    // =========================================================================
 
     private static Map<String, String> buildTokenCanonicalMap() {
         Map<String, String> map = new HashMap<>();
