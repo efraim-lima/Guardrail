@@ -42,7 +42,7 @@ public class SecurityClassifier {
 
     // --- Integração Qwen / Ollama ---
     private static final String DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate";
-    private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
+    private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:3b";
     private static final int QWEN_CONTEXT_EXAMPLES_PER_CLASS = 2;
     private static final int OLLAMA_CONNECT_TIMEOUT_MS = 5000;
     // Inferência em CPU pode ser significativamente mais lenta; 90s comporta qwen2.5:1.5b em hardware modesto

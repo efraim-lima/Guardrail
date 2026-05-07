@@ -5,7 +5,6 @@ import java.util.concurrent.TimeUnit;
 public class Main {
     private static final String LOG_PREFIX = "[Gateway]";
 
-    private static final int THREAD_POOL_SIZE = 50;
     private static final int WEBHOOK_PORT = Integer.parseInt(envOr("WEBHOOK_PORT", "8080"));
     private static final String WEBHOOK_PATH = envOr("WEBHOOK_PATH", "/validar");
 
@@ -40,7 +39,9 @@ public class Main {
         log("========================================");
         log("Endpoint: http://host.docker.internal:" + WEBHOOK_PORT + WEBHOOK_PATH);
 
-        this.threadPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        // Virtual threads para handlers HTTP: cada requisição recebe uma thread leve
+        // que bloqueia em awaitResult() sem consumir OS threads do pool.
+        this.threadPool = Executors.newVirtualThreadPerTaskExecutor();
         SecurityClassifier classifier = new SecurityClassifier();
         this.jobQueue = new OllamaJobQueue(classifier);
 

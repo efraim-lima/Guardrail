@@ -24,7 +24,6 @@ import java.util.concurrent.TimeoutException;
 public class OllamaJobQueue {
 
     private static final String LOG_PREFIX      = "[OllamaJobQueue]";
-    private static final int    DEFAULT_WORKERS   = 4;
     private static final int    DEFAULT_MAX_QUEUE = 200;
     private static final long   JOB_TTL_SECONDS   = 600; // 10 minutos
 
@@ -75,18 +74,15 @@ public class OllamaJobQueue {
     public OllamaJobQueue(SecurityClassifier classifier) {
         this.classifier = classifier;
 
-        int workerCount = Integer.parseInt(envOr("OLLAMA_WORKERS",   String.valueOf(DEFAULT_WORKERS)));
-        int maxQueue    = Integer.parseInt(envOr("OLLAMA_MAX_QUEUE", String.valueOf(DEFAULT_MAX_QUEUE)));
+        int maxQueue = Integer.parseInt(envOr("OLLAMA_MAX_QUEUE", String.valueOf(DEFAULT_MAX_QUEUE)));
 
-        // Semaphore justo: respeita a ordem de chegada dos submits quando a fila enche
+        // Semaphore justo: limita a quantidade de classificações simultâneas (rate-limit)
+        // Virtual threads são baratas, mas o Qwen/Ollama é um gargalo real de CPU/RAM
         this.semaphore = new Semaphore(maxQueue, true);
 
-        // Pool de workers exclusivo para chamadas ao Ollama (isolado das threads HTTP)
-        this.workers = Executors.newFixedThreadPool(workerCount, r -> {
-            Thread t = new Thread(r, "Ollama-Worker-" + System.nanoTime());
-            t.setDaemon(false);
-            return t;
-        });
+        // Uma virtual thread por tarefa: cada job recebe thread dedicada que termina
+        // imediatamente ao produzir o veredito — sem pool fixo, sem fila de espera interna.
+        this.workers = Executors.newVirtualThreadPerTaskExecutor();
 
         // Agendador de limpeza periódica de jobs expirados (daemon)
         this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -96,7 +92,7 @@ public class OllamaJobQueue {
         });
         this.cleaner.scheduleAtFixedRate(this::cleanExpiredJobs, 5, 5, TimeUnit.MINUTES);
 
-        log("Iniciado com " + workerCount + " worker(s), capacidade máxima=" + maxQueue);
+        log("Iniciado com virtual-thread-per-task, capacidade máxima de fila=" + maxQueue);
     }
 
     // -------------------------------------------------------------------------
@@ -121,11 +117,22 @@ public class OllamaJobQueue {
             try {
                 return classifier.classify(prompt);
             } finally {
+                // Libera o slot de taxa assim que a virtual thread termina a classificação
                 semaphore.release();
             }
         }, workers);
 
         jobs.put(jobId, new JobEntry(prompt, future));
+
+        // Sinal de conclusão emitido imediatamente quando a virtual thread produz o veredito.
+        // whenComplete é invocado pela própria thread que completou o future — sem delay.
+        future.whenComplete((verdict, ex) -> {
+            String result = (ex != null || verdict == null) ? "UNCERTAIN" : verdict;
+            log("Sinal de conclusão: job=" + jobId + " veredito=" + result
+                    + " thread=" + Thread.currentThread().getName());
+            AuditLogger.log("Gateway-System", "JOB_COMPLETED", jobId, result, "internal",
+                    "pending_after=" + pendingCount());
+        });
 
         // Agendamento de remoção automática ao expirar o TTL (evita vazamento de memória)
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
@@ -191,9 +198,11 @@ public class OllamaJobQueue {
 
     public void shutdown() {
         cleaner.shutdownNow();
+        // Virtual thread executor: shutdown() sinaliza para não aceitar novos jobs;
+        // as virtual threads já em execução terminam naturalmente quando sua tarefa acaba.
         workers.shutdown();
         try {
-            if (!workers.awaitTermination(15, TimeUnit.SECONDS)) {
+            if (!workers.awaitTermination(120, TimeUnit.SECONDS)) {
                 workers.shutdownNow();
             }
         } catch (InterruptedException e) {
