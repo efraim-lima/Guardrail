@@ -37,3 +37,5 @@ Incluir chamadas de ferramentas
 person
 
 Limpe por completo o namespace de desenvolvimento.
+
+Processando sua pergunta...

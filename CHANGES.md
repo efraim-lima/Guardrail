@@ -1,5 +1,20 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-07] - Otimização de Disponibilidade e Performance da Infraestrutura
+
+**Arquivos:** `docker-compose.yaml`, `src/main/java/SecurityClassifier.java`
+**Descrição:** Implementação de uma série de otimizações para aumentar a disponibilidade da aplicação e resolver gargalos de processamento. 
+1. No `docker-compose.yaml`:
+   - Adicionados limites e reservas de recursos (CPU/RAM) para todos os serviços, prevenindo congelamentos do host sob carga.
+   - Otimização do Ollama: reduzido `OLLAMA_NUM_PARALLEL` para 4, fixado `OLLAMA_MAX_LOADED_MODELS=1` e ativado `OLLAMA_KEEP_ALIVE=-1` para eliminar latência de cold-start.
+   - Refinamento de Healthchecks: aumentados os intervalos e timeouts para evitar falsos negativos durante picos de processamento.
+   - Ajuste de Escala: elevado o número de `OLLAMA_WORKERS` no Gateway para 8 e aumentada a capacidade da fila para 500 jobs.
+2. No `SecurityClassifier.java`:
+   - Dobrado o intervalo de pausa entre lotes de indexação (de 500ms para 1000ms) para mitigar a contenção de slots no Ollama durante o startup.
+**Motivo:** Resolver o travamento observado após o processamento de poucos prompts e garantir que o sistema permaneça responsivo mesmo sob inferência intensiva.
+
+---
+
 ## [2026-05-06] - Ajuste na Arquitetura de Validação de Prompts
 
 **Arquivo:** `src/main/java/SecurityClassifier.java`, `src/main/java/OllamaJobQueue.java`

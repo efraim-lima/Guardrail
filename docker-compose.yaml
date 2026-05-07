@@ -36,7 +36,8 @@ services:
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
       - GATEWAY_MITM_PORT=8443
-      - REFERENCE_PROMPTS_PATH=/app/PROMPTS.md
+      - OLLAMA_WORKERS=8
+      - OLLAMA_MAX_QUEUE=500
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro
@@ -45,6 +46,15 @@ services:
       - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
       - ./PROMPTS.md:/app/PROMPTS.md:ro
 
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
     logging:
       driver: json-file
       options:
@@ -52,10 +62,10 @@ services:
         max-file: "5"
     healthcheck:
       test: [ "CMD-SHELL", "pgrep java > /dev/null" ]
-      interval: 5s
-      timeout: 2s
-      retries: 10
-      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # Servidor MCP AgentK
@@ -81,11 +91,15 @@ services:
       - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
       test: [ "CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()" ]
-      interval: 10s
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 10s
     restart: unless-stopped
 
@@ -113,6 +127,10 @@ services:
       - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     depends_on:
       agentk-server:
         condition: service_healthy
@@ -152,9 +170,13 @@ services:
       - ./config/keycloak:/opt/keycloak/data/import:ro
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
     healthcheck:
       test: [ "CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080' || exit 1" ]
-      interval: 15s
+      interval: 20s
       timeout: 10s
       retries: 10
       start_period: 60s
@@ -251,7 +273,22 @@ services:
     networks:
       - agentk-network
     environment:
-      - OLLAMA_NUM_PARALLEL=8
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=-1
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ---------------------------------------------------------------------------
   # Nginx - Reverse Proxy HTTPS para AgentK Client
@@ -269,6 +306,10 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:443:443"
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     depends_on:
       # nginx inicia independentemente do oauth2-proxy.
       # Quando oauth2-proxy nao esta ativo, nginx retorna a pagina de erro customizada

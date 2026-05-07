@@ -271,7 +271,7 @@ public class SecurityClassifier {
                 log("Aprendizado progressivo: " + end + "/" + pending.size());
                 
                 // Pequena pausa para evitar sobrecarga no Ollama durante indexação massiva
-                Thread.sleep(500); 
+                Thread.sleep(1000); 
             } catch (Exception e) {
                 logError("Erro no lote de aprendizado (" + i + "-" + end + "): " + e.getMessage());
                 // Em caso de erro, espera um pouco mais antes de tentar o próximo lote
