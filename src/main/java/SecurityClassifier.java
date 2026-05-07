@@ -668,6 +668,8 @@ public class SecurityClassifier {
      * Retorna o conteúdo do campo "response" ou null em caso de falha.
      */
     private String callOllamaGenerate(String promptText) {
+        long startMs = System.currentTimeMillis();
+        log("Iniciando chamada Ollama | endpoint=" + ollamaEndpoint + " | modelo=" + ollamaModel);
         try {
             URL url = new URL(ollamaEndpoint);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -678,28 +680,77 @@ public class SecurityClassifier {
             conn.setConnectTimeout(OLLAMA_CONNECT_TIMEOUT_MS);
             conn.setReadTimeout(OLLAMA_READ_TIMEOUT_MS);
 
+            // stream:true → Ollama começa a inferir e enviar tokens imediatamente,
+            // tornando o uso de CPU/RAM visível e permitindo log de progresso em tempo real.
             String body = "{\"model\":\"" + ollamaModel
                     + "\",\"prompt\":\"" + escapeForJson(promptText)
-                    + "\",\"stream\":false}";
+                    + "\",\"stream\":true}";
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body.getBytes(StandardCharsets.UTF_8));
             }
+            log("Payload enviado ao Ollama, aguardando tokens de resposta...");
 
             int status = conn.getResponseCode();
             if (status != 200) {
-                logError("Ollama retornou HTTP " + status + " para endpoint: " + ollamaEndpoint);
+                logError("Ollama retornou HTTP " + status + " | endpoint=" + ollamaEndpoint);
                 return null;
             }
 
-            try (InputStream is = conn.getInputStream()) {
-                String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                return extractOllamaResponseField(responseBody);
+            // Lê a resposta linha a linha (cada linha é um JSON de streaming)
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+
+                StringBuilder accumulated = new StringBuilder();
+                int tokenCount = 0;
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+                    if (line.isBlank()) {
+                        continue;
+                    }
+
+                    // Extrai o token do campo "response" da linha de streaming
+                    String token = extractStreamingResponseToken(line);
+                    if (token != null && !token.isEmpty()) {
+                        accumulated.append(token);
+                        tokenCount++;
+                        // Loga a cada 20 tokens para mostrar progresso sem spam
+                        if (tokenCount % 20 == 0) {
+                            log("Tokens recebidos: " + tokenCount
+                                    + " | parcial=[" + accumulated.toString().trim() + "]"
+                                    + " | elapsed=" + ((System.currentTimeMillis() - startMs) / 1000) + "s");
+                        }
+                    }
+
+                    // Linha final: {"done":true,...}
+                    if (line.contains("\"done\":true") || line.contains("\"done\": true")) {
+                        break;
+                    }
+                }
+
+                String result = accumulated.toString().trim();
+                log("Ollama concluiu: tokens=" + tokenCount
+                        + " | resposta=[" + result + "]"
+                        + " | elapsed=" + ((System.currentTimeMillis() - startMs) / 1000) + "s");
+                return result.isEmpty() ? null : result;
             }
         } catch (Exception e) {
-            logError("Falha ao chamar Ollama: " + e.getMessage());
+            logError("Falha ao chamar Ollama (" + ((System.currentTimeMillis() - startMs) / 1000) + "s): " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Extrai o valor do campo "response" de uma linha de streaming do Ollama.
+     * Linha de exemplo: {"model":"qwen2.5:3b","response":"token","done":false}
+     */
+    private static String extractStreamingResponseToken(String line) {
+        Matcher m = OLLAMA_RESPONSE_FIELD.matcher(line);
+        if (m.find()) {
+            return unescapeJsonString(m.group(1));
+        }
+        return null;
     }
 
     /**

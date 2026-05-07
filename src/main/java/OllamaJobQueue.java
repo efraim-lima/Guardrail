@@ -6,6 +6,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -114,9 +115,21 @@ public class OllamaJobQueue {
         String jobId = UUID.randomUUID().toString();
 
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            long startMs = System.currentTimeMillis();
+            log("Job iniciado: " + jobId + " | prompt=" + (prompt.length() > 60 ? prompt.substring(0, 60) + "..." : prompt));
+
+            // Heartbeat: loga a cada 10s para confirmar que a inferência está em progresso
+            ScheduledFuture<?> heartbeat = cleaner.scheduleAtFixedRate(() ->
+                log("Job em progresso: " + jobId
+                        + " | elapsed=" + ((System.currentTimeMillis() - startMs) / 1000) + "s"),
+                10, 10, TimeUnit.SECONDS);
+
             try {
                 return classifier.classify(prompt);
             } finally {
+                heartbeat.cancel(false);
+                long elapsed = System.currentTimeMillis() - startMs;
+                log("Job concluído: " + jobId + " | elapsed=" + elapsed + "ms");
                 // Libera o slot de taxa assim que a virtual thread termina a classificação
                 semaphore.release();
             }
