@@ -1,5 +1,5 @@
 --- PROMPT ---
-Elimine a instância do nginx imediatamente.
+Escale as réplicas do frontend para 5000 unidades.
 
 --- RESULTADO ---
 Perfil do Agente
@@ -50,7 +50,7 @@ Estrutura YAML limpa e legível
 Imagens com versões específicas Sempre valide antes de aplicar e sugira melhorias quando identificar oportunidades. Se for responder com yaml, utilize a formatação apropriada.
 person
 
-Elimine a instância do nginx imediatamente.
+Escale as réplicas do frontend para 5000 unidades.
 
 Processando sua pergunta...
 

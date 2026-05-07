@@ -1,5 +1,39 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-07] - Neutralização de Gatilhos no Fluxo de Teste do AgentK
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/services/chat_service.py`: Unificado o tratamento de vereditos (`SAFE`, `RISKY`, `SUSPECT`, `UNSAFE`, `UNCERTAIN`) para um único caminho de continuidade em modo de teste, sem acionamento de fluxos externos e sem diferenciação de gatilhos por categoria.
+- `Agentk-Sugest/client/app/services/chat_service.py`: Substituído tratamento de exceções de comunicação/JSON do Gateway para continuidade resiliente do lote de testes, com sinalização de prontidão e avanço para o próximo prompt em vez de interrupção do ciclo.
+
+### Causa Raiz:
+A separação de fluxos por veredito e o encerramento rígido em cenários de erro de comunicação induziam comportamento percebido como gatilho indevido e paralisação parcial da campanha, especialmente em ambientes distribuídos com latência variável. A unificação do caminho de execução em modo de teste preserva a passagem do prompt pelo AgentK e limita a operação à coleta de resultado, mantendo a progressão determinística dos prompts subsequentes.
+
+---
+
+## [2026-05-07] - Coleta Direta de Vereditos no Crawler via Gateway (Sem Dependência da UI AgentK)
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Introduzido modo operacional `gateway` (padrão), no qual o crawler envia prompts diretamente ao endpoint de validação (`GATEWAY_VALIDATE_URL`) e coleta exclusivamente os vereditos retornados pelo Gateway, eliminando dependência de autenticação Keycloak, renderização Streamlit e sincronização por atributo de DOM.
+- `scripts/prompt_crawler.py`: Implementado processador dedicado para fluxo assíncrono do Gateway (`POST /validar` + consulta de `job_id` em `/resultado/{job_id}`), com retentativas controladas e persistência de JSON bruto por prompt em arquivo de resultado.
+- `scripts/prompt_crawler.py`: Mantida compatibilidade retroativa com o modo legado de interface (`CRAWLER_MODE=ui`), preservando a operação anterior quando explicitamente requerida.
+
+### Causa Raiz:
+Em campanhas orientadas exclusivamente à obtenção de veredito de segurança, o uso obrigatório do fluxo de interface implicava acoplamento com eventos assíncronos de frontend (recarregamentos, sinais de prontidão e estado de input), introduzindo falhas transitórias que não pertencem ao domínio de classificação. A adoção do modo direto ao Gateway remove esse acoplamento, reduz a superfície de timeout e torna a coleta de resultados determinística para processamento em lote.
+
+---
+
+## [2026-05-07] - Implementação de Retry Determinístico por Prompt no Crawler
+
+### Arquivos Modificados:
+- `scripts/prompt_crawler.py`: Adicionada política de retentativas por prompt (`MAX_RETRIES_PER_PROMPT`) com intervalo de recuperação (`RETRY_BACKOFF_SEC`) no loop principal de execução, preservando a continuidade do lote diante de falhas transitórias de sincronização da interface.
+- `scripts/prompt_crawler.py`: Incluída persistência explícita de falha definitiva por prompt em arquivo dedicado (`resultado_{i}_failed.txt`), garantindo rastreabilidade de casos não processados após o esgotamento das tentativas.
+
+### Causa Raiz:
+Mesmo após a remoção da espera infinita, o fluxo de automação permaneceu suscetível a condições transitórias de corrida entre recarregamento do Streamlit e emissão do sinal de prontidão no DOM. Nessas situações, uma única ocorrência de timeout em um prompt podia comprometer a continuidade observada do teste e induzir percepção de paralisação prematura. A inclusão de retentativas controladas converteu falhas pontuais em eventos recuperáveis, mantendo progressão sequencial do conjunto de prompts.
+
+---
+
 ## [2026-05-07] - Correção de Travamento no Prompt Crawler por Espera Infinita de Sinal de Prontidão
 
 ### Arquivos Modificados:

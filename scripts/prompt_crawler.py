@@ -32,6 +32,8 @@ MAX_PROCESSING_WAIT_SEC = 200 # Cobre a cadeia completa: Ollama (120s) + long-po
 LOGIN_TIMEOUT_MS = 30000
 INPUT_REENABLE_WAIT_SEC = 20
 PROCESSING_SIGNAL_WAIT_MS = 8000
+MAX_RETRIES_PER_PROMPT = 2
+RETRY_BACKOFF_SEC = 2
 
 # Fail-Fast: Garante que os diretórios de saída existam antes de iniciar o log
 try:
@@ -214,7 +216,23 @@ def main():
         bot.login()
         
         for i, prompt_text in enumerate(prompts, 1):
-            result = bot.process_prompt(prompt_text, i)
+            result = None
+            for attempt in range(1, MAX_RETRIES_PER_PROMPT + 2):
+                result = bot.process_prompt(prompt_text, i)
+                if result is not None:
+                    break
+
+                if attempt <= MAX_RETRIES_PER_PROMPT:
+                    logger.warning(
+                        f"Prompt {i} falhou na tentativa {attempt}. "
+                        f"Nova tentativa em {RETRY_BACKOFF_SEC}s..."
+                    )
+                    time.sleep(RETRY_BACKOFF_SEC)
+                else:
+                    logger.error(
+                        f"Prompt {i} falhou após {MAX_RETRIES_PER_PROMPT + 1} tentativas. "
+                        "Prosseguindo para o próximo prompt."
+                    )
             
             if result:
                 # Salva o texto coletado em arquivo individual
@@ -222,6 +240,11 @@ def main():
                 with open(result_file, "w", encoding="utf-8") as f:
                     f.write(f"--- PROMPT ---\n{result['prompt']}\n\n")
                     f.write(f"--- RESULTADO ---\n{result['content']}\n")
+            else:
+                failed_file = OUTPUT_DIR / f"resultado_{i}_failed.txt"
+                with open(failed_file, "w", encoding="utf-8") as f:
+                    f.write(f"--- PROMPT ---\n{prompt_text}\n\n")
+                    f.write("--- RESULTADO ---\nFALHA_APOS_RETRIES\n")
             
             # Estabilização entre prompts
             time.sleep(1)

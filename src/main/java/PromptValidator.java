@@ -252,8 +252,16 @@ public class PromptValidator implements Runnable {
     private class HealthHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            OllamaJobQueue.HealthSnapshot snapshot = jobQueue.healthSnapshot();
             writeJson(exchange, 200,
-                    "{\"status\":\"ok\",\"pending_jobs\":" + jobQueue.pendingCount() + "}");
+                    "{\"status\":\"" + snapshot.status + "\","
+                    + "\"pending_jobs\":" + snapshot.pendingJobs + ","
+                    + "\"queue_capacity\":" + snapshot.queueCapacity + ","
+                    + "\"queue_permits_available\":" + snapshot.queuePermitsAvailable + ","
+                    + "\"submitted_jobs\":" + snapshot.submittedJobs + ","
+                    + "\"completed_jobs\":" + snapshot.completedJobs + ","
+                    + "\"failed_jobs\":" + snapshot.failedJobs + ","
+                    + "\"timed_out_jobs\":" + snapshot.timedOutJobs + "}");
         }
     }
 
