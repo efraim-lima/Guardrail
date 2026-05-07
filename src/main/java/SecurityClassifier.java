@@ -1,17 +1,14 @@
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpTimeoutException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 /**
  * SecurityClassifier.java - Classificador de Segurança AgentK
@@ -22,60 +19,39 @@ import java.util.stream.Collectors;
 public class SecurityClassifier {
     private static final String LOG_PREFIX = "[SecurityClassifier]";
 
-    private static final String DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
-    private static final String DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b";
-    private static final int DEFAULT_OLLAMA_TIMEOUT = 120;
-    private static final int DEFAULT_OLLAMA_RETRIES = 2;
-    private static final int DEFAULT_RETRY_BACKOFF_MS = 1500;
-    private static final int TOP_K_EXAMPLES = 5;
-    private static final int BATCH_SIZE = 25; // Reduzido para 25 para evitar timeouts no Ollama
-    private static final String CACHE_FILE = envOr("EMBEDDINGS_CACHE_PATH", "BASE.embeddings.json");
+    private static final String DEFAULT_REFERENCE_PATH = "BASE.json";
+    private static final String DEFAULT_REFERENCE_FALLBACK_PATH = "src/main/java/BASE.json";
+    private static final int MAX_CACHE_SIZE = 100;
+    private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("\\W+");
     
-    // Limiares de aceitação para as análises locais (Fail-Fast)
-    private static final double SEMANTIC_THRESHOLD = 0.90;
-    private static final double HEURISTIC_THRESHOLD = 0.85;
+    // Limiares para aceitação do match híbrido (RAG local)
+    private static final double SEMANTIC_THRESHOLD = 0.28;
+    private static final double HEURISTIC_THRESHOLD = 0.18;
+    private static final double HYBRID_THRESHOLD = 0.24;
 
-    private final HttpClient httpClient;
     private final Gson gson = new Gson();
-    private final String model;
-    private final int ollamaTimeout;
-    private final int maxRetryAttempts;
-    private final int retryBackoffMs;
-    
-    private String ollamaBaseUrl;
     private final List<PromptExample> database = Collections.synchronizedList(new ArrayList<>());
+    private final Map<String, Double> idfByToken = Collections.synchronizedMap(new HashMap<>());
     private volatile boolean isIndexing = true;
     
     private final Map<String, String> cache = Collections.synchronizedMap(new LinkedHashMap<String, String>(128, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-            return size() > 100;
+            return size() > MAX_CACHE_SIZE;
         }
     });
 
     public SecurityClassifier() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-        
-        String url = envOr("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_URL);
-        if (url.endsWith("/api/generate")) {
-            url = url.substring(0, url.lastIndexOf("/api/generate"));
-        }
-        this.ollamaBaseUrl = url;
-        this.model = envOr("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL);
-        this.ollamaTimeout = parsePositiveIntEnv("OLLAMA_TIMEOUT", DEFAULT_OLLAMA_TIMEOUT);
-        this.maxRetryAttempts = parsePositiveIntEnv("OLLAMA_RETRIES", DEFAULT_OLLAMA_RETRIES);
-        this.retryBackoffMs = parsePositiveIntEnv("OLLAMA_RETRY_BACKOFF_MS", DEFAULT_RETRY_BACKOFF_MS);
-        
         CompletableFuture.runAsync(this::initializeDatabase);
     }
 
     private void initializeDatabase() {
         try {
-            String pathStr = envOr("REFERENCE_PROMPTS_PATH", "BASE.md");
+            String pathStr = envOr("REFERENCE_PROMPTS_PATH", DEFAULT_REFERENCE_PATH);
             Path path = Paths.get(pathStr);
-            if (!Files.exists(path)) path = Paths.get("src/main/java/BASE.md");
+            if (!Files.exists(path)) {
+                path = Paths.get(DEFAULT_REFERENCE_FALLBACK_PATH);
+            }
             
             if (!Files.exists(path)) {
                 logError("Base de conhecimento não encontrada.");
@@ -83,23 +59,26 @@ public class SecurityClassifier {
                 return;
             }
 
-            long lastModified = Files.getLastModifiedTime(path).toMillis();
-            Map<String, double[]> existingEmbeddings = loadCacheMap();
-            List<PendingExample> allPrompts = parseBaseFile(path);
-            List<PendingExample> toEmbed = new ArrayList<>();
-            
-            for (PendingExample p : allPrompts) {
-                if (existingEmbeddings.containsKey(p.text)) {
-                    database.add(new PromptExample(p.text, p.category, existingEmbeddings.get(p.text)));
-                } else {
-                    toEmbed.add(p);
-                }
+            List<PromptExample> loadedExamples = parseBaseJson(path);
+            if (loadedExamples.isEmpty()) {
+                logError("Base de conhecimento vazia ou inválida.");
+                this.isIndexing = false;
+                return;
             }
 
-            if (!toEmbed.isEmpty()) {
-                log("Aprendizado incremental: processando " + toEmbed.size() + " novos prompts...");
-                indexInBatches(toEmbed);
-                saveToCache(lastModified);
+            Map<String, Double> localIdf = computeIdf(loadedExamples);
+            for (PromptExample example : loadedExamples) {
+                example.vector = buildTfIdfVector(example.termFrequency, localIdf);
+                example.vectorNorm = calculateVectorNorm(example.vector);
+            }
+
+            synchronized (database) {
+                database.clear();
+                database.addAll(loadedExamples);
+            }
+            synchronized (idfByToken) {
+                idfByToken.clear();
+                idfByToken.putAll(localIdf);
             }
 
             this.isIndexing = false;
@@ -117,9 +96,7 @@ public class SecurityClassifier {
     public String classify(String userPrompt, boolean isTestFlow) {
         if (userPrompt == null || userPrompt.trim().isEmpty()) return "UNCERTAIN";
         String normalized = userPrompt.trim();
-        
-        // Bloqueia a validação enquanto o sistema estiver indexando a base de dados
-        // Isso evita concorrência e sobrecarga (timeouts) no Ollama
+
         while (isIndexing) {
             try {
                 Thread.sleep(1000);
@@ -136,67 +113,60 @@ public class SecurityClassifier {
         try {
             List<PromptExample> dbCopy;
             synchronized (database) { dbCopy = new ArrayList<>(database); }
-            
-            // 1. Análise Heurística (Jaccard) - Fast Path 100% Local (CPU Bound)
-            if (!dbCopy.isEmpty()) {
-                double bestHeuristicScore = -1;
-                String heuristicVerdict = null;
+            if (dbCopy.isEmpty()) {
+                return "UNCERTAIN";
+            }
 
-                for (PromptExample example : dbCopy) {
-                    double score = calculateJaccard(normalized, example.text);
-                    if (score > bestHeuristicScore) {
-                        bestHeuristicScore = score;
-                        heuristicVerdict = example.category;
-                    }
-                }
+            List<String> promptTokenList = tokenize(normalized);
+            if (promptTokenList.isEmpty()) {
+                return "UNCERTAIN";
+            }
+            Set<String> promptTokens = new HashSet<>(promptTokenList);
 
-                if (bestHeuristicScore >= HEURISTIC_THRESHOLD) {
-                    log((isTestFlow ? "[TEST_FLOW] " : "") + "Match Heurístico (" + String.format("%.2f", bestHeuristicScore) + ") → " + heuristicVerdict);
-                    cache.put(normalized, heuristicVerdict);
-                    return heuristicVerdict;
+            Map<String, Integer> promptTf = buildTermFrequency(promptTokenList);
+            Map<String, Double> promptVector;
+            synchronized (idfByToken) {
+                promptVector = buildTfIdfVector(promptTf, idfByToken);
+            }
+            double promptNorm = calculateVectorNorm(promptVector);
+
+            ScoredExample best = null;
+            for (PromptExample example : dbCopy) {
+                double heuristicScore = calculateJaccard(promptTokens, example.tokens);
+                double semanticScore = calculateCosineSimilarity(promptVector, promptNorm, example.vector, example.vectorNorm);
+                double hybridScore = (0.60 * semanticScore) + (0.40 * heuristicScore);
+
+                ScoredExample current = new ScoredExample(example, heuristicScore, semanticScore, hybridScore);
+                if (best == null || current.hybridScore > best.hybridScore) {
+                    best = current;
                 }
             }
 
-            // 2. Análise Semântica (Embeddings) - Fast Path com chamada à API (I/O Bound)
-            if (!dbCopy.isEmpty()) {
-                double[] queryEmbedding = fetchEmbedding(normalized);
-                double bestSemanticScore = -1;
-                String semanticVerdict = null;
-
-                for (PromptExample example : dbCopy) {
-                    double score = calculateCosineSimilarity(queryEmbedding, example.embedding);
-                    if (score > bestSemanticScore) {
-                        bestSemanticScore = score;
-                        semanticVerdict = example.category;
-                    }
-                }
-
-                if (bestSemanticScore >= SEMANTIC_THRESHOLD) {
-                    log((isTestFlow ? "[TEST_FLOW] " : "") + "Match Semântico (" + String.format("%.2f", bestSemanticScore) + ") → " + semanticVerdict);
-                    cache.put(normalized, semanticVerdict);
-                    return semanticVerdict;
-                }
+            if (best == null) {
+                return "UNCERTAIN";
             }
 
-            // 3. Análise com IA (Ollama) - Fallback Final
-            log((isTestFlow ? "[TEST_FLOW] " : "") + "Iniciando análise exclusiva via IA para o prompt: " + 
-                (normalized.length() > 30 ? normalized.substring(0, 30) + "..." : normalized));
-            
-            // Agrupa os tokens por categoria para reduzir o payload do Ollama e aumentar a velocidade
-            Map<String, Set<String>> categoryTokens = new HashMap<>();
-            if (!dbCopy.isEmpty()) {
-                for (PromptExample example : dbCopy) {
-                    categoryTokens.computeIfAbsent(example.category, k -> new HashSet<>())
-                                  .addAll(tokenize(example.text));
-                }
+            boolean hasHeuristicMatch = best.heuristicScore >= HEURISTIC_THRESHOLD;
+            boolean hasSemanticMatch = best.semanticScore >= SEMANTIC_THRESHOLD;
+            boolean hasHybridMatch = best.hybridScore >= HYBRID_THRESHOLD;
+
+            if (!hasHeuristicMatch && !hasSemanticMatch && !hasHybridMatch) {
+                log((isTestFlow ? "[TEST_FLOW] " : "")
+                        + "Sem match relevante no RAG local (heurístico="
+                        + String.format("%.3f", best.heuristicScore)
+                        + ", semântico=" + String.format("%.3f", best.semanticScore)
+                        + ", híbrido=" + String.format("%.3f", best.hybridScore)
+                        + "). Retornando UNCERTAIN.");
+                cache.put(normalized, "UNCERTAIN");
+                return "UNCERTAIN";
             }
 
-            String aiPrompt = buildAIPrompt(normalized, categoryTokens);
-            String llmResponse = queryLocalLLM(aiPrompt);
-            String verdict = evaluateResponse(llmResponse);
-            
-            log((isTestFlow ? "[TEST_FLOW] " : "") + "Veredito IA → " + verdict);
-            
+            String verdict = best.example.category;
+            log((isTestFlow ? "[TEST_FLOW] " : "")
+                    + "RAG local → " + verdict
+                    + " (heurístico=" + String.format("%.3f", best.heuristicScore)
+                    + ", semântico=" + String.format("%.3f", best.semanticScore)
+                    + ", híbrido=" + String.format("%.3f", best.hybridScore) + ")");
             cache.put(normalized, verdict);
             return verdict;
 
@@ -206,251 +176,234 @@ public class SecurityClassifier {
         }
     }
 
-    private String buildAIPrompt(String userPrompt, Map<String, Set<String>> categoryTokens) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("### PAPEL: AUDITOR DE SEGURANÇA KUBERNETES ESTRITO ###\n");
-        sb.append("Analise o prompt e responda APENAS: UNSAFE, RISKY, SUSPECT, SAFE ou UNCERTAIN.\n\n");
-        
-        sb.append("### REGRAS (TOKENS DE CONTEXTO POR CATEGORIA):\n");
-        if (categoryTokens != null && !categoryTokens.isEmpty()) {
-            for (Map.Entry<String, Set<String>> entry : categoryTokens.entrySet()) {
-                sb.append("- ").append(entry.getKey()).append(": ");
-                sb.append(String.join(", ", entry.getValue())).append("\n");
-            }
-            sb.append("\n");
+    private List<PromptExample> parseBaseJson(Path path) throws IOException {
+        String content = Files.readString(path);
+        JsonArray array = gson.fromJson(content, JsonArray.class);
+        if (array == null) {
+            return Collections.emptyList();
         }
 
-        sb.append("### PROMPT DO USUÁRIO:\n");
-        sb.append("<PROMPT>\n").append(userPrompt).append("\n</PROMPT>");
-        return sb.toString();
-    }
-
-    private Map<String, double[]> loadCacheMap() {
-        Map<String, double[]> map = new HashMap<>();
-        try {
-            Path cachePath = Paths.get(CACHE_FILE);
-            if (!Files.exists(cachePath)) return map;
-            String json = Files.readString(cachePath);
-            CachedDatabase cached = gson.fromJson(json, CachedDatabase.class);
-            if (cached != null && cached.examples != null) {
-                for (PromptExample ex : cached.examples) {
-                    if (ex.text != null && ex.embedding != null) map.put(ex.text, ex.embedding);
-                }
+        List<PromptExample> list = new ArrayList<>();
+        for (JsonElement item : array) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
             }
-        } catch (Exception e) {}
-        return map;
-    }
 
-    private void saveToCache(long timestamp) {
-        try {
-            CachedDatabase cached = new CachedDatabase();
-            cached.lastModified = timestamp;
-            synchronized (database) { cached.examples = new ArrayList<>(database); }
-            Files.writeString(Paths.get(CACHE_FILE), gson.toJson(cached));
-        } catch (Exception e) {}
-    }
-
-    private List<PendingExample> parseBaseFile(Path path) throws IOException {
-        String content = Files.readString(path);
-        String[] lines = content.split("\n");
-        List<PendingExample> list = new ArrayList<>();
-        String currentCategory = "UNCERTAIN";
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("##")) {
-                currentCategory = trimmed.replace("#", "").trim().toUpperCase();
-            } else if (!trimmed.isEmpty() && Character.isDigit(trimmed.charAt(0))) {
-                String text = trimmed.replaceAll("^\\d+\\.\\s*", "").trim();
-                if (!text.isEmpty()) list.add(new PendingExample(text, currentCategory));
+            JsonObject obj = item.getAsJsonObject();
+            String text = getStringOrNull(obj, "content");
+            if (text == null || text.isBlank()) {
+                continue;
             }
+
+            String category = extractCategory(obj);
+            List<String> tokenList = tokenize(text);
+            if (tokenList.isEmpty()) {
+                continue;
+            }
+            Set<String> tokens = new HashSet<>(tokenList);
+            Map<String, Integer> termFrequency = buildTermFrequency(tokenList);
+
+            list.add(new PromptExample(text, category, tokens, termFrequency));
         }
         return list;
     }
 
-    private void indexInBatches(List<PendingExample> pending) {
-        for (int i = 0; i < pending.size(); i += BATCH_SIZE) {
-            int end = Math.min(i + BATCH_SIZE, pending.size());
-            List<PendingExample> batch = pending.subList(i, end);
-            try {
-                List<double[]> embeddings = fetchEmbeddingsBatch(batch.stream().map(p -> p.text).collect(Collectors.toList()));
-                for (int j = 0; j < batch.size(); j++) {
-                    database.add(new PromptExample(batch.get(j).text, batch.get(j).category, embeddings.get(j)));
-                }
-                log("Aprendizado progressivo: " + end + "/" + pending.size());
-                
-                // Pequena pausa para evitar sobrecarga no Ollama durante indexação massiva
-                Thread.sleep(1000); 
-            } catch (Exception e) {
-                logError("Erro no lote de aprendizado (" + i + "-" + end + "): " + e.getMessage());
-                // Em caso de erro, espera um pouco mais antes de tentar o próximo lote
-                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
-            }
+    private String extractCategory(JsonObject obj) {
+        String classification = null;
+        if (obj.has("metadata") && obj.get("metadata").isJsonObject()) {
+            JsonObject metadata = obj.getAsJsonObject("metadata");
+            classification = getStringOrNull(metadata, "classification");
+        }
+
+        if (classification == null || classification.isBlank()) {
+            classification = "UNCERTAIN";
+        }
+
+        String normalized = classification.trim().toUpperCase(Locale.ROOT);
+        switch (normalized) {
+            case "SAFE":
+            case "SUSPECT":
+            case "RISKY":
+            case "UNSAFE":
+            case "UNCERTAIN":
+                return normalized;
+            default:
+                return "UNCERTAIN";
         }
     }
 
-    private double[] fetchEmbedding(String text) throws IOException, InterruptedException {
-        List<double[]> list = fetchEmbeddingsBatch(Collections.singletonList(text));
-        return list.get(0);
+    private static String getStringOrNull(JsonObject obj, String fieldName) {
+        if (obj == null || fieldName == null || fieldName.isBlank()) {
+            return null;
+        }
+        if (!obj.has(fieldName)) {
+            return null;
+        }
+        JsonElement value = obj.get(fieldName);
+        if (value == null || !value.isJsonPrimitive()) {
+            return null;
+        }
+        return value.getAsString();
     }
 
-    private List<double[]> fetchEmbeddingsBatch(List<String> texts) throws IOException, InterruptedException {
-        Map<String, Object> bodyMap = new HashMap<>();
-        bodyMap.put("model", model);
-        bodyMap.put("input", texts);
-        // Timeout de 120s para embeddings para garantir processamento em hardware limitado
-        HttpResponse<String> response = sendRequestWithFallback(ollamaBaseUrl + "/api/embed", gson.toJson(bodyMap), 120);
-        BatchEmbedResponse res = gson.fromJson(response.body(), BatchEmbedResponse.class);
-        if (res == null || res.embeddings == null) throw new IOException("Ollama Error");
-        return res.embeddings;
-    }
-
-    private String queryLocalLLM(String aiPrompt) throws IOException, InterruptedException {
-        Map<String, Object> bodyMap = new HashMap<>();
-        bodyMap.put("model", model);
-        bodyMap.put("prompt", aiPrompt);
-        bodyMap.put("stream", false);
-        Map<String, Object> options = new HashMap<>();
-        options.put("temperature", 0.0);
-        options.put("num_predict", 10);
-        options.put("top_k", 10);
-        options.put("top_p", 0.5);
-        bodyMap.put("options", options);
-
-        HttpResponse<String> response = sendRequestWithFallback(ollamaBaseUrl + "/api/generate", gson.toJson(bodyMap), ollamaTimeout);
-        GenerateResponse res = gson.fromJson(response.body(), GenerateResponse.class);
-        return res != null ? res.response : "UNCERTAIN";
-    }
-
-    private HttpResponse<String> sendRequestWithFallback(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        if (url == null || url.isBlank()) {
-            throw new IOException("URL do Ollama inválida");
-        }
-        if (jsonBody == null || jsonBody.isBlank()) {
-            throw new IOException("Payload de requisição inválido");
-        }
-        if (timeoutSec <= 0) {
-            throw new IOException("Timeout de requisição inválido");
-        }
-
-        try {
-            return executeHttpRequestWithRetry(url, jsonBody, timeoutSec);
-        } catch (IOException e) {
-            if (url.contains("127.0.0.1")) {
-                String fallbackUrl = url.replace("127.0.0.1", "host.docker.internal");
-                log("Falha no endpoint primário. Tentando fallback em " + fallbackUrl);
-                return executeHttpRequestWithRetry(fallbackUrl, jsonBody, timeoutSec);
-            }
-            throw e;
-        }
-    }
-
-    private HttpResponse<String> executeHttpRequestWithRetry(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        IOException lastError = null;
-        int totalAttempts = Math.max(1, maxRetryAttempts + 1);
-
-        for (int attempt = 1; attempt <= totalAttempts; attempt++) {
-            try {
-                return executeHttpRequest(url, jsonBody, timeoutSec);
-            } catch (HttpTimeoutException e) {
-                lastError = e;
-                logError("Timeout no Ollama (tentativa " + attempt + "/" + totalAttempts + ") em " + url + ". Erro: " + e.getMessage());
-
-                if (attempt >= totalAttempts) {
-                    throw e;
-                }
-
-                try {
-                    Thread.sleep((long) retryBackoffMs * attempt);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw ie;
-                }
+    private static Map<String, Double> computeIdf(List<PromptExample> examples) {
+        Map<String, Integer> documentFrequency = new HashMap<>();
+        for (PromptExample example : examples) {
+            for (String token : example.tokens) {
+                documentFrequency.merge(token, 1, Integer::sum);
             }
         }
 
-        if (lastError != null) {
-            throw lastError;
+        int documentCount = examples.size();
+        Map<String, Double> idf = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : documentFrequency.entrySet()) {
+            double value = Math.log((documentCount + 1.0) / (entry.getValue() + 1.0)) + 1.0;
+            idf.put(entry.getKey(), value);
+        }
+        return idf;
+    }
+
+    private static Map<String, Double> buildTfIdfVector(Map<String, Integer> termFrequency, Map<String, Double> idfMap) {
+        Map<String, Double> vector = new HashMap<>();
+        if (termFrequency == null || termFrequency.isEmpty()) {
+            return vector;
         }
 
-        throw new IOException("Falha inesperada ao executar requisição HTTP");
+        for (Map.Entry<String, Integer> entry : termFrequency.entrySet()) {
+            String token = entry.getKey();
+            int tf = entry.getValue();
+            if (tf <= 0) {
+                continue;
+            }
+
+            double idf = idfMap.getOrDefault(token, 0.0);
+            if (idf <= 0.0) {
+                continue;
+            }
+
+            double weightedTf = 1.0 + Math.log(tf);
+            vector.put(token, weightedTf * idf);
+        }
+        return vector;
     }
 
-    private HttpResponse<String> executeHttpRequest(String url, String jsonBody, int timeoutSec) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(timeoutSec))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-        return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+    private static double calculateVectorNorm(Map<String, Double> vector) {
+        if (vector == null || vector.isEmpty()) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (double value : vector.values()) {
+            sum += value * value;
+        }
+        return Math.sqrt(sum);
     }
 
-    private String evaluateResponse(String res) {
-        if (res == null) return "UNCERTAIN";
-        String u = res.toUpperCase();
-        if (u.contains("UNSAFE")) return "UNSAFE";
-        if (u.contains("SUSPECT")) return "SUSPECT";
-        if (u.contains("RISKY")) return "RISKY";
-        if (u.contains("SAFE")) return "SAFE";
-        return "UNCERTAIN";
+    private static double calculateCosineSimilarity(Map<String, Double> left, double leftNorm,
+                                                    Map<String, Double> right, double rightNorm) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return 0.0;
+        }
+        if (leftNorm == 0.0 || rightNorm == 0.0) {
+            return 0.0;
+        }
+
+        Map<String, Double> smaller = left.size() <= right.size() ? left : right;
+        Map<String, Double> larger = left.size() <= right.size() ? right : left;
+
+        double dot = 0.0;
+        for (Map.Entry<String, Double> entry : smaller.entrySet()) {
+            dot += entry.getValue() * larger.getOrDefault(entry.getKey(), 0.0);
+        }
+        return dot / (leftNorm * rightNorm);
     }
 
-    private double calculateCosineSimilarity(double[] v1, double[] v2) {
-        if (v1 == null || v2 == null || v1.length == 0 || v1.length != v2.length) return 0;
-        double dot = 0, n1 = 0, n2 = 0;
-        for (int i = 0; i < v1.length; i++) { dot += v1[i] * v2[i]; n1 += v1[i] * v1[i]; n2 += v2[i] * v2[i]; }
-        double div = Math.sqrt(n1) * Math.sqrt(n2);
-        return (div == 0) ? 0 : dot / div;
+    private static double calculateJaccard(Set<String> left, Set<String> right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return 0.0;
+        }
+        int intersection = 0;
+        Set<String> smaller = left.size() <= right.size() ? left : right;
+        Set<String> larger = left.size() <= right.size() ? right : left;
+        for (String token : smaller) {
+            if (larger.contains(token)) {
+                intersection++;
+            }
+        }
+        int union = left.size() + right.size() - intersection;
+        if (union == 0) {
+            return 0.0;
+        }
+        return (double) intersection / union;
     }
 
-    private double calculateJaccard(String s1, String s2) {
-        Set<String> h1 = tokenize(s1), h2 = tokenize(s2);
-        if (h1.isEmpty() || h2.isEmpty()) return 0.0;
-        int size1 = h1.size(), size2 = h2.size();
-        h1.retainAll(h2);
-        return (double) h1.size() / (size1 + size2 - h1.size());
+    private static List<String> tokenize(String text) {
+        List<String> tokens = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return tokens;
+        }
+
+        String[] parts = TOKEN_SPLIT_PATTERN.split(text.toLowerCase(Locale.ROOT));
+        for (String token : parts) {
+            if (token == null) {
+                continue;
+            }
+            String normalized = token.trim();
+            if (normalized.length() < 3) {
+                continue;
+            }
+            tokens.add(normalized);
+        }
+        return tokens;
     }
 
-    private Set<String> tokenize(String s) {
-        if (s == null) return new HashSet<>();
-        return Arrays.stream(s.toLowerCase().split("\\W+")).filter(t -> t.length() > 2).collect(Collectors.toSet());
+    private static Map<String, Integer> buildTermFrequency(List<String> tokens) {
+        Map<String, Integer> tf = new HashMap<>();
+        if (tokens == null || tokens.isEmpty()) {
+            return tf;
+        }
+        for (String token : tokens) {
+            tf.merge(token, 1, Integer::sum);
+        }
+        return tf;
     }
 
     private static String envOr(String key, String fallback) {
-        String v = System.getenv(key);
-        return (v == null || v.isBlank()) ? fallback : v;
-    }
-
-    private static int parsePositiveIntEnv(String key, int fallback) {
-        String rawValue = System.getenv(key);
-        if (rawValue == null || rawValue.isBlank()) {
-            return fallback;
-        }
-
-        try {
-            int parsed = Integer.parseInt(rawValue.trim());
-            if (parsed <= 0) {
-                logError("Valor inválido em " + key + " (" + rawValue + "). Usando fallback=" + fallback);
-                return fallback;
-            }
-            return parsed;
-        } catch (NumberFormatException e) {
-            logError("Formato inválido em " + key + " (" + rawValue + "). Usando fallback=" + fallback);
-            return fallback;
-        }
+        String value = System.getenv(key);
+        return (value == null || value.isBlank()) ? fallback : value;
     }
 
     private static void log(String msg)      { System.out.println(LOG_PREFIX + " " + msg); }
     private static void logError(String msg) { System.err.println(LOG_PREFIX + " [ERROR] " + msg); }
 
-    private static class BatchEmbedResponse { List<double[]> embeddings; }
-    private static class GenerateResponse { String response; }
-    private static class CachedDatabase { long lastModified; List<PromptExample> examples; }
     private static class PromptExample {
-        String text, category; double[] embedding;
-        PromptExample() {}
-        PromptExample(String t, String c, double[] e) { this.text = t; this.category = c; this.embedding = e; }
+        final String text;
+        final String category;
+        final Set<String> tokens;
+        final Map<String, Integer> termFrequency;
+        Map<String, Double> vector;
+        double vectorNorm;
+
+        PromptExample(String text, String category, Set<String> tokens, Map<String, Integer> termFrequency) {
+            this.text = text;
+            this.category = category;
+            this.tokens = tokens;
+            this.termFrequency = termFrequency;
+            this.vector = Collections.emptyMap();
+            this.vectorNorm = 0.0;
+        }
     }
-    private static class PendingExample { final String text, category; PendingExample(String t, String c) { this.text = t; this.category = c; } }
-    private static class ScoredExample { final PromptExample example; final double score; ScoredExample(PromptExample e, double s) { this.example = e; this.score = s; } }
+
+    private static class ScoredExample {
+        final PromptExample example;
+        final double heuristicScore;
+        final double semanticScore;
+        final double hybridScore;
+
+        ScoredExample(PromptExample example, double heuristicScore, double semanticScore, double hybridScore) {
+            this.example = example;
+            this.heuristicScore = heuristicScore;
+            this.semanticScore = semanticScore;
+            this.hybridScore = hybridScore;
+        }
+    }
 }

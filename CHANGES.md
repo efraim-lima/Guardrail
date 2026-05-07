@@ -1,41 +1,5 @@
 # Registro de Alterações (Changelog)
 
-## [2026-05-07] - Robustez de Timeout e Retentativas na Integração com Ollama
-
-### Arquivos Modificados:
-- `src/main/java/SecurityClassifier.java`: Implementada aplicação explícita de timeout por requisição HTTP via `HttpRequest.timeout(Duration.ofSeconds(timeoutSec))`, corrigindo o uso anterior em que o parâmetro de timeout era recebido, porém não propagado para a chamada efetiva.
-- `src/main/java/SecurityClassifier.java`: Introduzida estratégia de retentativas para `HttpTimeoutException` com backoff incremental configurável (`OLLAMA_RETRIES`, `OLLAMA_RETRY_BACKOFF_MS`), reduzindo falhas transitórias em cenários de aquecimento de modelo e variação de carga do serviço Ollama.
-- `src/main/java/SecurityClassifier.java`: Fortalecido o padrão Fail-Fast no método de envio HTTP, com validação de URL, payload e timeout antes da chamada externa.
-- `src/main/java/SecurityClassifier.java`: Substituído parsing direto de `OLLAMA_TIMEOUT` por rotina de parsing seguro (`parsePositiveIntEnv`), prevenindo falhas de inicialização por valores inválidos de ambiente.
-
-### Causa Raiz:
-O erro observado (`HttpTimeoutException: request timed out`) ocorria em chamadas ao endpoint `http://ollama:11434/api/generate` sob latência elevada. Embora o classificador recebesse um parâmetro de timeout, a requisição HTTP era construída sem `timeout` no `HttpRequest`, tornando o controle temporal inconsistente e dificultando a recuperação em falhas transitórias. A correção estabelece timeout determinístico por requisição, retentativas com recuo progressivo e validações antecipadas, aumentando a resiliência operacional sem alterar a interface pública do componente.
-
----
-
-## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
-
-### Arquivos Modificados:
-- `nginx/nginx.conf`: Aumentados buffers de proxy nas rotas `location = /oauth2/callback` e `location /oauth2/` (`proxy_buffer_size 64k`, `proxy_buffers 8 64k`, `proxy_busy_buffers_size 128k`) para suportar cabeçalhos de resposta maiores vindos do `oauth2-proxy`.
-- `docker-compose.yaml`: Adicionado `--session-cookie-minimal=true` no serviço `oauth2-proxy` para reduzir o tamanho do cookie de sessão e, consequentemente, o volume de `Set-Cookie` no callback OIDC.
-
-### Causa Raiz:
-Durante o callback OIDC, o Nginx recebia resposta do `oauth2-proxy` com cabeçalhos maiores que o buffer padrão, gerando o erro `upstream sent too big header while reading response header from upstream`. Isso disparava redirecionamentos repetidos para login e novos callbacks, produzindo loop de autenticação. A combinação de buffers maiores no Nginx com sessão mínima no `oauth2-proxy` elimina o gargalo estrutural e estabiliza o login sem intervenção manual.
-
----
-
-## [2026-04-30] - Fallback Automático no Callback OAuth2 e Mensagem de Indisponibilidade
-
-### Arquivos Modificados:
-- `nginx/nginx.conf`: Criado bloco `location = /oauth2/callback` com proxy dedicado ao `oauth2-proxy` e fallback automático `error_page 500 502 503 504 =302 /oauth2/sign_in?rd=/`. A alteração evita exibição de erro 500 ao usuário quando ocorre `invalid_grant` por callback duplicado e força um novo ciclo de login sem intervenção manual.
-- `nginx/nginx.conf`: Criado bloco `location /oauth2/` para encaminhar endpoints internos do oauth2-proxy (`/oauth2/sign_in`, `/oauth2/static`, etc.) com rota explícita.
-- `nginx/nginx.conf`: Atualizada a página `@auth_unavailable`, removendo a mensagem antiga de "configuração pendente" e substituindo por aviso genérico de indisponibilidade temporária da autenticação.
-
-### Causa Raiz:
-Os logs do oauth2-proxy mostravam alternância entre `AuthSuccess` e falhas posteriores `invalid_grant: Code not valid`, comportamento típico de callback repetido para um authorization code já consumido. Além disso, a página de fallback do Nginx mantinha texto legado que induzia diagnóstico incorreto de setup incompleto, mesmo com serviços já em execução. O novo fluxo torna a autenticação idempotente para o usuário final: em falha transitória de callback, o sistema redireciona automaticamente para novo login.
-
----
-
 ## [2026-04-30] - Estabilização de Callback OAuth2 Sem Interação Manual
 
 ### Arquivos Modificados:
