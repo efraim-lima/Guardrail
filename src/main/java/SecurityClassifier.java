@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
@@ -23,11 +24,22 @@ public class SecurityClassifier {
     private static final String DEFAULT_REFERENCE_FALLBACK_PATH = "src/main/java/BASE.json";
     private static final int MAX_CACHE_SIZE = 100;
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("\\W+");
+    private static final Pattern NON_ASCII_MARKS_PATTERN = Pattern.compile("\\p{M}+");
     
     // Limiares para aceitação do match híbrido (RAG local)
-    private static final double SEMANTIC_THRESHOLD = 0.28;
-    private static final double HEURISTIC_THRESHOLD = 0.18;
-    private static final double HYBRID_THRESHOLD = 0.24;
+        private static final double SEMANTIC_THRESHOLD = 0.12;
+        private static final double HEURISTIC_THRESHOLD = 0.08;
+        private static final double HYBRID_THRESHOLD = 0.10;
+        private static final double SUSPICIOUS_INTENT_BOOST = 0.12;
+
+        private static final Map<String, String> TOKEN_CANONICAL_MAP = buildTokenCanonicalMap();
+        private static final Set<String> DELETE_INTENT_TOKENS = Set.of(
+            "delete_action", "remove_action", "destroy_action"
+        );
+        private static final Set<String> K8S_RESOURCE_TOKENS = Set.of(
+            "pod", "deployment", "namespace", "configmap", "secret", "service", "ingress",
+            "statefulset", "replicaset", "daemonset", "pvc", "persistentvolume", "cluster"
+        );
 
     private final Gson gson = new Gson();
     private final List<PromptExample> database = Collections.synchronizedList(new ArrayList<>());
@@ -129,12 +141,18 @@ public class SecurityClassifier {
                 promptVector = buildTfIdfVector(promptTf, idfByToken);
             }
             double promptNorm = calculateVectorNorm(promptVector);
+            boolean promptHasDeleteIntent = hasAnyToken(promptTokens, DELETE_INTENT_TOKENS);
+            boolean promptHasK8sResource = hasAnyToken(promptTokens, K8S_RESOURCE_TOKENS);
 
             ScoredExample best = null;
             for (PromptExample example : dbCopy) {
                 double heuristicScore = calculateJaccard(promptTokens, example.tokens);
                 double semanticScore = calculateCosineSimilarity(promptVector, promptNorm, example.vector, example.vectorNorm);
-                double hybridScore = (0.60 * semanticScore) + (0.40 * heuristicScore);
+                double hybridScore = (0.55 * semanticScore) + (0.45 * heuristicScore);
+
+                if (promptHasDeleteIntent && promptHasK8sResource && "SUSPECT".equals(example.category)) {
+                    hybridScore += SUSPICIOUS_INTENT_BOOST;
+                }
 
                 ScoredExample current = new ScoredExample(example, heuristicScore, semanticScore, hybridScore);
                 if (best == null || current.hybridScore > best.hybridScore) {
@@ -347,13 +365,87 @@ public class SecurityClassifier {
             if (token == null) {
                 continue;
             }
-            String normalized = token.trim();
+            String normalized = normalizeToken(token);
             if (normalized.length() < 3) {
                 continue;
             }
             tokens.add(normalized);
         }
         return tokens;
+    }
+
+    private static String normalizeToken(String token) {
+        if (token == null || token.isBlank()) {
+            return "";
+        }
+
+        String normalized = token.trim().toLowerCase(Locale.ROOT);
+        normalized = Normalizer.normalize(normalized, Normalizer.Form.NFD);
+        normalized = NON_ASCII_MARKS_PATTERN.matcher(normalized).replaceAll("");
+
+        if (normalized.length() > 4 && normalized.endsWith("s")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+
+        return TOKEN_CANONICAL_MAP.getOrDefault(normalized, normalized);
+    }
+
+    private static boolean hasAnyToken(Set<String> tokens, Set<String> expected) {
+        if (tokens == null || tokens.isEmpty() || expected == null || expected.isEmpty()) {
+            return false;
+        }
+        for (String token : tokens) {
+            if (expected.contains(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Map<String, String> buildTokenCanonicalMap() {
+        Map<String, String> map = new HashMap<>();
+
+        map.put("delete", "delete_action");
+        map.put("deletar", "delete_action");
+        map.put("deleta", "delete_action");
+        map.put("deletando", "delete_action");
+        map.put("apaga", "delete_action");
+        map.put("apagar", "delete_action");
+        map.put("apague", "delete_action");
+        map.put("elimina", "delete_action");
+        map.put("eliminar", "delete_action");
+        map.put("elimine", "delete_action");
+        map.put("exclui", "delete_action");
+        map.put("excluir", "delete_action");
+        map.put("exclua", "delete_action");
+        map.put("limpa", "delete_action");
+        map.put("limpar", "delete_action");
+        map.put("limpe", "delete_action");
+        map.put("drop", "delete_action");
+        map.put("dropa", "delete_action");
+
+        map.put("remove", "remove_action");
+        map.put("remova", "remove_action");
+        map.put("remover", "remove_action");
+        map.put("remocao", "remove_action");
+        map.put("derruba", "remove_action");
+        map.put("derrubar", "remove_action");
+        map.put("desfaca", "remove_action");
+        map.put("desfazer", "remove_action");
+
+        map.put("destrua", "destroy_action");
+        map.put("destruir", "destroy_action");
+        map.put("mate", "destroy_action");
+        map.put("matar", "destroy_action");
+
+        map.put("ns", "namespace");
+        map.put("deploy", "deployment");
+        map.put("deployament", "deployment");
+        map.put("svc", "service");
+        map.put("pv", "persistentvolume");
+        map.put("pvc", "pvc");
+
+        return map;
     }
 
     private static Map<String, Integer> buildTermFrequency(List<String> tokens) {
