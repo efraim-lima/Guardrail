@@ -32,7 +32,7 @@ services:
       - WEBHOOK_PORT=8080
       - WEBHOOK_PATH=/validar
       - OLLAMA_ENDPOINT=http://ollama:11434/api/generate
-      - OLLAMA_MODEL=qwen2.5:1.5b
+      - OLLAMA_MODEL=qwen2.5:3b
       - QWEN_CLASSIFICATION_ENABLED=true
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
@@ -248,7 +248,7 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     restart: unless-stopped
-    entrypoint: [ "sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:1.5b && wait" ]
+    entrypoint: [ "sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:3b && wait" ]
     networks:
       - agentk-network
 
