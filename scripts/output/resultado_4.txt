@@ -51,5 +51,3 @@ Imagens com versões específicas Sempre valide antes de aplicar e sugira melhor
 person
 
 Jogue fora o secret que guarda a autenticação.
-
-Processando sua pergunta...

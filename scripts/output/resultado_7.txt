@@ -51,5 +51,3 @@ Imagens com versões específicas Sempre valide antes de aplicar e sugira melhor
 person
 
 Desative o ingress controller por um tempo.
-
-Processando sua pergunta...

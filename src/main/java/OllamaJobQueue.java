@@ -126,8 +126,12 @@ public class OllamaJobQueue {
         String jobId = UUID.randomUUID().toString();
 
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            String tName = Thread.currentThread().getName();
             try {
-                return classifier.classify(prompt, isTestFlow);
+                log("Thread " + tName + " iniciada para processar job " + jobId);
+                String verdict = classifier.classify(prompt, isTestFlow);
+                log("Thread " + tName + " finalizada para job " + jobId + ". Veredito: " + verdict);
+                return verdict;
             } finally {
                 semaphore.release();
             }
