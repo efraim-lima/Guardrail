@@ -38,13 +38,15 @@ services:
       - GATEWAY_MITM_PORT=8443
       - OLLAMA_WORKERS=8
       - OLLAMA_MAX_QUEUE=500
+      - EMBEDDINGS_CACHE_PATH=/app/output/BASE.embeddings.json
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
-      - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
       - ./PROMPTS.md:/app/PROMPTS.md:ro
+      - ./output:/app/output:rw
+      - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
 
     deploy:
       resources:

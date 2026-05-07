@@ -26,7 +26,7 @@ public class SecurityClassifier {
     private static final int DEFAULT_OLLAMA_TIMEOUT = 120;
     private static final int TOP_K_EXAMPLES = 5;
     private static final int BATCH_SIZE = 25; // Reduzido para 25 para evitar timeouts no Ollama
-    private static final String CACHE_FILE = "BASE.embeddings.json";
+    private static final String CACHE_FILE = envOr("EMBEDDINGS_CACHE_PATH", "BASE.embeddings.json");
     
     // Limiares de aceitação para as análises locais (Fail-Fast)
     private static final double SEMANTIC_THRESHOLD = 0.90;
