@@ -1,5 +1,18 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-07] - Robustez de Timeout e Retentativas na Integração com Ollama
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Implementada aplicação explícita de timeout por requisição HTTP via `HttpRequest.timeout(Duration.ofSeconds(timeoutSec))`, corrigindo o uso anterior em que o parâmetro de timeout era recebido, porém não propagado para a chamada efetiva.
+- `src/main/java/SecurityClassifier.java`: Introduzida estratégia de retentativas para `HttpTimeoutException` com backoff incremental configurável (`OLLAMA_RETRIES`, `OLLAMA_RETRY_BACKOFF_MS`), reduzindo falhas transitórias em cenários de aquecimento de modelo e variação de carga do serviço Ollama.
+- `src/main/java/SecurityClassifier.java`: Fortalecido o padrão Fail-Fast no método de envio HTTP, com validação de URL, payload e timeout antes da chamada externa.
+- `src/main/java/SecurityClassifier.java`: Substituído parsing direto de `OLLAMA_TIMEOUT` por rotina de parsing seguro (`parsePositiveIntEnv`), prevenindo falhas de inicialização por valores inválidos de ambiente.
+
+### Causa Raiz:
+O erro observado (`HttpTimeoutException: request timed out`) ocorria em chamadas ao endpoint `http://ollama:11434/api/generate` sob latência elevada. Embora o classificador recebesse um parâmetro de timeout, a requisição HTTP era construída sem `timeout` no `HttpRequest`, tornando o controle temporal inconsistente e dificultando a recuperação em falhas transitórias. A correção estabelece timeout determinístico por requisição, retentativas com recuo progressivo e validações antecipadas, aumentando a resiliência operacional sem alterar a interface pública do componente.
+
+---
+
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
 
 ### Arquivos Modificados:
