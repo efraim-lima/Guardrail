@@ -29,7 +29,7 @@ public class OllamaJobQueue {
     private static final String LOG_PREFIX      = "[OllamaJobQueue]";
     private static final int    DEFAULT_WORKERS   = 10;
     private static final int    DEFAULT_MAX_QUEUE = 200;
-    private static final long   DEFAULT_JOB_EXEC_TIMEOUT_SECONDS = 120;
+    private static final long   DEFAULT_JOB_EXEC_TIMEOUT_SECONDS = 0;
     private static final long   JOB_TTL_SECONDS   = 600; // 10 minutos
 
     private final ExecutorService          workers;
@@ -130,6 +130,9 @@ public class OllamaJobQueue {
         int maxQueue    = Integer.parseInt(envOr("OLLAMA_MAX_QUEUE", String.valueOf(DEFAULT_MAX_QUEUE)));
         this.maxJobExecutionSeconds = Long.parseLong(envOr("OLLAMA_JOB_EXEC_TIMEOUT_SECONDS",
             String.valueOf(DEFAULT_JOB_EXEC_TIMEOUT_SECONDS)));
+        if (this.maxJobExecutionSeconds < 0) {
+            throw new IllegalArgumentException("OLLAMA_JOB_EXEC_TIMEOUT_SECONDS deve ser >= 0");
+        }
         this.maxQueueCapacity = maxQueue;
 
         // Semaphore justo: respeita a ordem de chegada dos submits quando a fila enche
@@ -152,7 +155,9 @@ public class OllamaJobQueue {
 
         log("Iniciado com " + workerCount
             + " worker(s), capacidade máxima=" + maxQueue
-            + ", timeout por job=" + maxJobExecutionSeconds + "s");
+            + ", timeout por job="
+            + (maxJobExecutionSeconds > 0 ? maxJobExecutionSeconds + "s" : "desativado")
+            + ".");
     }
 
     // -------------------------------------------------------------------------
@@ -204,7 +209,8 @@ public class OllamaJobQueue {
         jobs.put(jobId, new JobEntry(normalizedPrompt, future, isTestFlow, permitReleased, workerTask));
         submittedCount.incrementAndGet();
 
-        cleaner.schedule(() -> {
+        if (maxJobExecutionSeconds > 0) {
+            cleaner.schedule(() -> {
             if (future.isDone()) {
                 return;
             }
@@ -212,14 +218,15 @@ public class OllamaJobQueue {
             boolean cancelled = workerTask.cancel(true);
             timedOutCount.incrementAndGet();
             future.completeExceptionally(new TimeoutException(
-                    "Job excedeu timeout de " + maxJobExecutionSeconds + "s"));
+                "Job excedeu timeout de " + maxJobExecutionSeconds + "s"));
             releasePermitOnce(permitReleased);
 
             logError("Timeout no job " + jobId + " após " + maxJobExecutionSeconds
-                    + "s. cancel_requested=" + cancelled);
+                + "s. cancel_requested=" + cancelled);
             AuditLogger.log("Gateway-System", "JOB_TIMEOUT", jobId, "TIMEOUT", "internal",
-                    "cancel_requested=" + cancelled + ", pending=" + pendingCount());
-        }, maxJobExecutionSeconds, TimeUnit.SECONDS);
+                "cancel_requested=" + cancelled + ", pending=" + pendingCount());
+            }, maxJobExecutionSeconds, TimeUnit.SECONDS);
+        }
 
         // Agendamento de remoção automática ao expirar o TTL (evita vazamento de memória)
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);

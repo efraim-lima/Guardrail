@@ -1,5 +1,0 @@
---- PROMPT ---
-Suba o request de memória para 128GB.
-
---- RESULTADO ---
-FALHA_APOS_RETRIES
