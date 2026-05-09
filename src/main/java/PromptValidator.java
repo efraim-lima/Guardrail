@@ -131,7 +131,7 @@ public class PromptValidator implements Runnable {
                 // 1. Bloqueio Heurístico
                 if (BLOCKED_PATTERN.matcher(sanitized).matches()) {
                     log("Bloqueado por heurística: " + sanitized);
-                    String jobId = jobQueue.submitResolved(sanitized, "Reprovado");
+                    String jobId = jobQueue.submitResolved(sanitized, "UNSAFE", isTestFlow, sourceIp);
                     writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                     return;
                 }
@@ -140,13 +140,13 @@ public class PromptValidator implements Runnable {
                 String cached = cache.get(sanitized);
                 if (cached != null) {
                     log("Cache hit: " + cached);
-                    String jobId = jobQueue.submitResolved(sanitized, cached);
+                    String jobId = jobQueue.submitResolved(sanitized, cached, isTestFlow, sourceIp);
                     writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                     return;
                 }
                 
                 // 3. Fila assíncrona (Ollama)
-                String jobId = jobQueue.submit(sanitized, isTestFlow);
+                String jobId = jobQueue.submit(sanitized, isTestFlow, sourceIp);
                 writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                 
             } catch (Exception e) {

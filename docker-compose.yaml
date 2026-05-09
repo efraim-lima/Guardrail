@@ -45,6 +45,7 @@ services:
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
       - ./PROMPTS.md:/app/PROMPTS.md:ro
+      - ./src/main/java/BASE.jsonl:/app/BASE.jsonl:ro
       - ./output:/app/output:rw
       - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
 
@@ -146,20 +147,27 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
     container_name: keycloak
+    user: root
     security_opt:
       - apparmor:unconfined
-    # --http-relative-path: essencial para rodar sob /keycloak/ no nginx
-    command: start-dev --import-realm --http-relative-path=/keycloak
+    # start-dev: executa o Keycloak em modo desenvolvimento com auto-rebuild.
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "
+      mkdir -p /opt/keycloak/data/import &&
+      cp /tmp/realm-agentk.json /opt/keycloak/data/import/realm-agentk.json &&
+      /opt/keycloak/bin/kc.sh start-dev --import-realm --verbose
+      "
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
+      - KC_HOSTNAME_STRICT=false
       - KC_HTTP_RELATIVE_PATH=/keycloak
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
-      # Hostname definido dinamicamente via X-Forwarded-* do Nginx.
-      # Evita WARNs do provider v2 em modo start-dev sobre opções runtime no build-time.
+      - KC_IMPORT=/tmp/realm-agentk.json
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
@@ -167,9 +175,8 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
-      # Realm importado automaticamente no primeiro boot via --import-realm.
-      # Se o realm já existir no volume, o Keycloak ignora silenciosamente.
-      - ./config/keycloak:/opt/keycloak/data/import:ro
+      # Realm montado em local neutro para evitar NPE no escaneamento do Keycloak 26.
+      - ./config/keycloak/realm-agentk.json:/tmp/realm-agentk.json:ro
     networks:
       - agentk-network
     deploy:
@@ -177,7 +184,8 @@ services:
         limits:
           memory: 1536M
     healthcheck:
-      test: [ "CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080' || exit 1" ]
+      # Procura pela porta 8080 (1F90 hex) em qualquer interface (IPv4 ou IPv6).
+      test: [ "CMD-SHELL", "grep -i ':1F90' /proc/net/tcp* || exit 1" ]
       interval: 20s
       timeout: 10s
       retries: 10

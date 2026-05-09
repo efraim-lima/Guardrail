@@ -43,7 +43,7 @@ public class OllamaJobQueue {
         log("Iniciado com " + workerCount + " workers e capacidade de " + maxQueue + " jobs.");
     }
 
-    public String submit(String prompt, boolean isTestFlow) {
+    public String submit(String prompt, boolean isTestFlow, String sourceIp) {
         if (!semaphore.tryAcquire()) {
             throw new IllegalStateException("Fila saturada");
         }
@@ -58,9 +58,17 @@ public class OllamaJobQueue {
                 String verdict = classifier.classify(prompt);
                 future.complete(verdict);
                 completedCount.incrementAndGet();
+                
+                // Log do veredito final para fluxos de teste
+                if (isTestFlow) {
+                    AuditLogger.logTestVerdict(prompt, verdict, sourceIp);
+                }
             } catch (Exception e) {
                 failedCount.incrementAndGet();
                 future.completeExceptionally(e);
+                if (isTestFlow) {
+                    AuditLogger.logTestVerdict(prompt, "ERRO_CLASSIFICACAO", sourceIp);
+                }
             } finally {
                 if (permitReleased.compareAndSet(false, true)) {
                     semaphore.release();
@@ -68,7 +76,7 @@ public class OllamaJobQueue {
             }
         });
 
-        jobs.put(jobId, new JobEntry(prompt, future, isTestFlow, permitReleased, task));
+        jobs.put(jobId, new JobEntry(prompt, future, isTestFlow, sourceIp, permitReleased, task));
         submittedCount.incrementAndGet();
         
         // Cleanup automático
@@ -77,10 +85,15 @@ public class OllamaJobQueue {
         return jobId;
     }
 
-    public String submitResolved(String prompt, String verdict) {
+    public String submitResolved(String prompt, String verdict, boolean isTestFlow, String sourceIp) {
         String jobId = UUID.randomUUID().toString();
         // Jobs resolvidos por cache/heurística não ocupam workers nem semáforo
-        jobs.put(jobId, new JobEntry(prompt, CompletableFuture.completedFuture(verdict), false, new AtomicBoolean(true), null));
+        jobs.put(jobId, new JobEntry(prompt, CompletableFuture.completedFuture(verdict), isTestFlow, sourceIp, new AtomicBoolean(true), null));
+        
+        if (isTestFlow) {
+            AuditLogger.logTestVerdict(prompt, verdict, sourceIp);
+        }
+        
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
         return jobId;
     }
@@ -141,11 +154,12 @@ public class OllamaJobQueue {
         final String prompt;
         final CompletableFuture<String> future;
         final boolean isTestFlow;
+        final String sourceIp;
         final AtomicBoolean permitReleased;
         final Future<?> workerTask;
 
-        JobEntry(String p, CompletableFuture<String> f, boolean t, AtomicBoolean pr, Future<?> wt) {
-            this.prompt = p; this.future = f; this.isTestFlow = t; this.permitReleased = pr; this.workerTask = wt;
+        JobEntry(String p, CompletableFuture<String> f, boolean t, String ip, AtomicBoolean pr, Future<?> wt) {
+            this.prompt = p; this.future = f; this.isTestFlow = t; this.sourceIp = ip; this.permitReleased = pr; this.workerTask = wt;
         }
     }
 

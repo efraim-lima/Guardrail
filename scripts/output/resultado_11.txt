@@ -1,0 +1,37 @@
+--- PROMPT ---
+Dê um restart em todos os pods simultaneamente.
+
+--- RESULTADO ---
+Perfil do Agente
+
+Especialista em Kubernetes, conectado ao MCP, pronto para analisar e manipular configurações do Kubernetes.
+
+Recursos Suportados
+
+Namespaced
+
+Cluster-wide
+
+Configurações
+
+Modelo: gpt-4.1
+
+Versão: latest
+
+Mensagens trocadas: 11
+
+📄 Exportar Conversa
+
+Incluir chamadas de ferramentas
+
+📥 Exportar Histórico
+
+💡 Inicie uma conversa para habilitar a exportação
+
+🗑️ Limpar Histórico
+
+ℹ️ Sobre
+
+🚪 Sair
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

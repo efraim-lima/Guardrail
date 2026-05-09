@@ -1,6 +1,33 @@
 # Registro de Alterações (Changelog)
 
-<<<<<<< HEAD
+## [2026-05-09] - Otimização da Resiliência e Desacoplamento de Dependências do Keycloak (v26)
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Restaurada a classificação granular com 5 categorias (`SAFE`, `SUSPECT`, `UNSAFE`, `RISKY`, `UNCERTAIN`). Atualizada a engenharia de prompt para incluir definições estritas de contexto Kubernetes e ajustada a lógica de parsing para garantir o mapeamento correto dos vereditos.
+- `src/main/java/PromptValidator.java`: Atualizada a heurística de bloqueio para retornar explicitamente a categoria `UNSAFE`, alinhando-se ao novo padrão de classificação granular.
+- `docker-compose.yaml`: Mantida a configuração de usuário `root` e script de boot para o Keycloak para assegurar estabilidade operacional.
+- `nginx.conf`: Refatorados os cabeçalhos `X-Forwarded-*` para garantir que o Keycloak receba o contexto correto do host (`$host`) e force o uso de HTTPS (`X-Forwarded-Proto https`, `X-Forwarded-Port 443`), assegurando que links e redirecionamentos gerados pelo Keycloak sejam sempre seguros.
+    - `docker-compose.yaml`: Otimizado o *Healthcheck* do Keycloak para detecção universal de porta (IPv4/IPv6) via `/proc/net/tcp*`, garantindo o status `healthy` independentemente da interface de escuta do Quarkus.
+
+## [2026-05-09] - Refatoração do Pipeline de Classificação para Análise Semântica com Contexto
+
+### Arquivos Modificados:
+- `src/main/java/SecurityClassifier.java`: Refatorado o pipeline principal de classificação. Substituiu-se a abordagem Zero-Shot + Few-Shot por um único prompt contextual unificado (`buildContextualPrompt`) que injeta obrigatoriamente os 5 exemplos mais semanticamente similares do `BASE.jsonl` em toda chamada ao Qwen. Removido o bug crítico do `buildFewShotPrompt` que gerava instruções contraditórias ("Aprovado/Reprovado" vs. 5 categorias), causando `INVALID` frequente. A segunda tentativa agora usa 7 exemplos de contexto para maior cobertura.
+
+### Causa Raiz:
+O modelo Qwen recebia instruções contraditórias no fallback Few-Shot (pedia "Aprovado/Reprovado" mas questionava por 5 categorias), causando repostas ambíguas classificadas como `INVALID`. Além disso, o fluxo Zero-Shot não aproveitava o banco de exemplos do `BASE.jsonl`, resultando em classificações RISKY sendo retornadas como SAFE/SUSPECT por falta de contexto semântico de referência.
+
+A transição para o Keycloak 26 (baseado em Quarkus) introduziu uma imagem de contêiner altamente otimizada e desprovida de utilitários de shell avançados (como `bash` e `curl`). A tentativa de execução de scripts de saúde complexos ou o mapeamento de diretórios em volumes não inicializados resultava em falhas de boot silenciosas ou erros de localização de caminhos. A nova configuração adota uma postura de "dependência zero" do host, garantindo a estabilidade do serviço em ambientes de implantação diversos.
+
+## [2026-05-09] - Correção de Erro de Inicialização do Keycloak ("directory not found") em Docker
+
+### Arquivos Modificados:
+- `docker-compose.yaml`: Refatorado o serviço `keycloak`. Removida a redundância da opção `--http-relative-path` no comando (mantida apenas via variável de ambiente) para evitar falhas no ciclo de auto-rebuild do Quarkus. Adicionadas as variáveis `KC_HOSTNAME`, `KC_HOSTNAME_ADMIN` e `KC_HOSTNAME_STRICT=false` para estabilizar a resolução de nomes sob proxy. Adicionado o flag `--verbose` para facilitar diagnósticos em ambientes automatizados. Revertida a montagem do volume de importação para diretório (`./config/keycloak`), mantendo a compatibilidade com a estrutura de pastas esperada pelo Keycloak, após a estabilização do ciclo de build.
+- `.env`: Ajustadas as variáveis `KC_HOSTNAME` e `KC_HOSTNAME_ADMIN_URL` para remover o sufixo `/keycloak`, alinhando-as ao comportamento do Keycloak v2 que concatena automaticamente o hostname com o `KC_HTTP_RELATIVE_PATH`.
+
+### Causa Raiz:
+O erro `ERROR: directory not found` no Keycloak 26 (baseado em Quarkus) é frequentemente disparado por uma inconsistência entre as opções de build-time passadas via CLI e o estado do sistema de arquivos montado via volumes. Ao remover a opção redundante do comando e garantir que o realm seja montado como um arquivo explícito, eliminamos a ambiguidade no provisionamento inicial e estabilizamos o boot do container.
+
 ## [2026-05-09] - Reestruturação do Fluxo de Validação do GuardRail (Sanitização, Heurística Síncrona e Zero-Shot/Few-Shot)
 
 ### Arquivos Modificados:
@@ -12,9 +39,7 @@
 A necessidade de otimizar o uso da CPU para avaliações óbvias que poderiam ser vetadas previamente (por heurística local ou cache) exigiu dividir o processamento em tarefas síncronas (recepção) e assíncronas. Simultaneamente, as respostas antigas da LLM (SAFE, UNSAFE, RISKY) estavam causando ruído de formatação e longos tempos de parsing. A adoção de *Zero-Shot* binário ("Aprovado/Reprovado") forçou o determinismo da resposta do modelo e maximizou o *fail-fast*, restando ao *Few-Shot* resolver apenas exceções severas de ambiguidade.
 
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
-=======
 ## [2026-05-07] - Correção de Regressão de Vereditos UNCERTAIN por Timeout de Execução na Fila
->>>>>>> 50e81ec12b19cfc272a3101d23c40c325e682ee3
 
 ### Arquivos Modificados:
 - `src/main/java/OllamaJobQueue.java`: Alterado o valor padrão de `OLLAMA_JOB_EXEC_TIMEOUT_SECONDS` para `0` (desativado), removendo cancelamentos automáticos não intencionais de jobs em execução. Mantida a possibilidade de ativação explícita do timeout por variável de ambiente para cenários de proteção operacional controlada.
@@ -335,18 +360,6 @@ A cada execução do `setup.sh`, o IP atual da máquina é detectado automaticam
 
 - **`start.sh`** — Reescrito com orquestração em 4 fases e pausa interativa entre as fases 3 e 4.
 
-## 26 de Abril de 2026 - Correção de Startup do oauth2-proxy: Realm Auto-Provisionado e Healthcheck do Keycloak
-
-### Arquivos Modificados
-
-- **`config/keycloak/realm-agentk.json`** *(novo)* — Import do realm `agentk` com o client `oauth2-proxy` pré-configurado.
-- **`docker-compose.yaml`** — Adicionado `--import-realm` ao Keycloak; healthcheck ao Keycloak via `/keycloak/health/ready`; `oauth2-proxy` atualizado para aguardar `keycloak: service_healthy`; healthcheck do oauth2-proxy removido; nginx atualizado para `service_started`.
-
-### Descrição
-
-O `oauth2-proxy` falhava com "unhealthy" por três problemas encadeados que impediam o serviço de inicializar.
-
-### Causa-Raiz
 
 1. **`wget` inexistente na imagem distroless**: A imagem `quay.io/oauth2-proxy/oauth2-proxy:latest` é baseada em `gcr.io/distroless/static:nonroot`, que não contém shell, `wget`, `curl` ou qualquer utilitário. O healthcheck `CMD wget ...` falhava imediatamente, marcando o container como `unhealthy`.
 2. **Realm `agentk` não existia no Keycloak**: O `oauth2-proxy` tenta buscar o JWKS URL durante a inicialização. Como o realm não havia sido criado, recebia 404 e crashava.
