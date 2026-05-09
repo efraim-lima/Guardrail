@@ -1,5 +1,15 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-09] - Reestruturação do Fluxo de Validação do GuardRail (Sanitização, Heurística Síncrona e Zero-Shot/Few-Shot)
+
+### Arquivos Modificados:
+- `src/main/java/PromptValidator.java`: Implementada sanitização de texto de entrada (remoção de caracteres invisíveis e truncamento para limite máximo de 300 palavras). Transferida a camada de cache e heurística (avaliação via Expressões Regulares) para este componente a fim de garantir execução em *Primeiro Plano* (síncrona). Adicionada lógica para submissão antecipada de jobs concluídos na fila assíncrona.
+- `src/main/java/OllamaJobQueue.java`: Criado o método `submitResolved`, permitindo o registro instantâneo de requisições que tiveram veredito garantido pela heurística/cache do Validator sem onerar os workers ou a API do modelo LLM.
+- `src/main/java/SecurityClassifier.java`: Refatorado o pipeline para aplicar estritamente inferências *Zero-Shot* (parâmetros `temperature=0.0` e `num_predict=2`). Configurado o prompt do sistema de forma imperativa para respostas exclusivas de "Aprovado" ou "Reprovado", acoplado com validação formatada (`evaluateResponseStrict`). Implementada também rotina de *Fallback* baseada em similaridade (Context Recovery e Few-Shot Reevaluation) para cobrir incertezas do Ollama quando houver respostas com formato corrompido, reaproveitando a base legada (SQLite simulado).
+
+### Causa Raiz:
+A necessidade de otimizar o uso da CPU para avaliações óbvias que poderiam ser vetadas previamente (por heurística local ou cache) exigiu dividir o processamento em tarefas síncronas (recepção) e assíncronas. Simultaneamente, as respostas antigas da LLM (SAFE, UNSAFE, RISKY) estavam causando ruído de formatação e longos tempos de parsing. A adoção de *Zero-Shot* binário ("Aprovado/Reprovado") forçou o determinismo da resposta do modelo e maximizou o *fail-fast*, restando ao *Few-Shot* resolver apenas exceções severas de ambiguidade.
+
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
 
 ### Arquivos Modificados:

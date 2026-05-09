@@ -50,7 +50,7 @@ jar {
 task fatJar(type: Jar) {
     group = 'build'
     description = 'Gera fat JAR executavel com todas as dependencias'
-    classifier = 'all'
+    archiveClassifier = 'all'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     manifest {
@@ -82,13 +82,13 @@ task obfuscatedJar(type: JavaExec, dependsOn: fatJar) {
     description = 'Gera jar executavel ofuscado para distribuicao em Docker/GitHub'
 
     classpath = configurations.proguard
-    main = 'proguard.ProGuard'
+    mainClass = 'proguard.ProGuard'
 
     def javaHome = System.getProperty('java.home')
 
     doFirst {
         args '@proguard-rules.pro',
-                '-injars', fatJar.archivePath,
+                '-injars', fatJar.archiveFile.get().asFile,
                 '-outjars', obfuscatedJarPath,
                 '-libraryjars', "${javaHome}/jmods"
     }

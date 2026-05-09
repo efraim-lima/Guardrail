@@ -135,6 +135,25 @@ public class OllamaJobQueue {
         return jobId;
     }
 
+    /**
+     * Submete um job já resolvido pela Heurística/Cache (não ocupa workers).
+     *
+     * @param prompt  texto a classificar
+     * @param verdict veredito pre-calculado
+     * @return        jobId único (UUID)
+     */
+    public String submitResolved(String prompt, String verdict) {
+        String jobId = UUID.randomUUID().toString();
+        CompletableFuture<String> future = CompletableFuture.completedFuture(verdict);
+        jobs.put(jobId, new JobEntry(prompt, future));
+        
+        cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
+        
+        AuditLogger.log("Gateway-System", "JOB_RESOLVED_IMMEDIATELY", jobId, verdict, "internal",
+                "prompt_length=" + prompt.length());
+        return jobId;
+    }
+
     // -------------------------------------------------------------------------
     // Long-poll de resultado
     // -------------------------------------------------------------------------

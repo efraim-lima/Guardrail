@@ -16,8 +16,12 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.regex.Pattern;
 
 /**
  * PromptValidator
@@ -38,6 +42,15 @@ public class PromptValidator implements Runnable {
     private final String           path;
     private final OllamaJobQueue   jobQueue;
     private final ExecutorService  executorService;
+
+    // Cache local simulando Redis e Padrão de heurística para bloqueio imediato
+    private final Map<String, String> cache = Collections.synchronizedMap(new LinkedHashMap<String, String>(128, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 100;
+        }
+    });
+    private static final Pattern BLOCKED_PATTERN = Pattern.compile("(?i).*(rm -rf|drop table|bypass|ignore todas as instru|ignorar todas as instru|esqueça todas).*");
 
     private volatile boolean running = true;
     private HttpServer server;
@@ -143,14 +156,35 @@ public class PromptValidator implements Runnable {
                     return;
                 }
 
+                String sanitizedPrompt = sanitizeAndTruncate(prompt);
+
                 String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
                 AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp,
-                        "snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
+                        "snippet=" + (sanitizedPrompt.length() > 50 ? sanitizedPrompt.substring(0, 50) : sanitizedPrompt));
 
+                // 1. Consulta ao banco de cache local (heurística)
+                if (BLOCKED_PATTERN.matcher(sanitizedPrompt).matches()) {
+                    log("Bloqueado por heurística: " + sanitizedPrompt);
+                    String jobId = jobQueue.submitResolved(sanitizedPrompt, "Reprovado");
+                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "HEURISTIC_BLOCK", sourceIp, "prompt_length=" + sanitizedPrompt.length());
+                    writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
+                    return;
+                }
+
+                String cachedVerdict = cache.get(sanitizedPrompt);
+                if (cachedVerdict != null) {
+                    log("Resolvido via cache: " + cachedVerdict);
+                    String jobId = jobQueue.submitResolved(sanitizedPrompt, cachedVerdict);
+                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "CACHE_HIT", sourceIp, "prompt_length=" + sanitizedPrompt.length());
+                    writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
+                    return;
+                }
+
+                // 2. Submete ao processamento assíncrono do Ollama
                 try {
-                    String jobId = jobQueue.submit(prompt);
+                    String jobId = jobQueue.submit(sanitizedPrompt);
                     AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "ACCEPTED", sourceIp,
-                            "prompt_length=" + prompt.length());
+                            "prompt_length=" + sanitizedPrompt.length());
                     writeJson(exchange, 202,
                             "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                 } catch (IllegalStateException e) {
@@ -278,6 +312,26 @@ public class PromptValidator implements Runnable {
         }
 
         return body.trim();
+    }
+
+    /**
+     * Sanitiza a entrada removendo caracteres de controle e limita a 300 palavras.
+     */
+    private static String sanitizeAndTruncate(String input) {
+        if (input == null) return "";
+        // Remove caracteres de controle invisíveis, exceto quebras de linha e tabs
+        String sanitized = input.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "");
+        
+        // Trunca para o máximo de 300 palavras
+        String[] words = sanitized.split("\\s+");
+        if (words.length > 300) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 300; i++) {
+                sb.append(words[i]).append(" ");
+            }
+            return sb.toString().trim();
+        }
+        return sanitized.trim();
     }
 
     private static String extractJsonStringField(String json, String field) {
