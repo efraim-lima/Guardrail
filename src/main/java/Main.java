@@ -37,6 +37,7 @@ public class Main {
     private void startWebhookMode() {
         log("========================================");
         log("GATEWAY - MODO WEBHOOK DE VALIDAÇÃO");
+        log("FLUXO SECUNDÁRIO (STATISTICAL) ATIVO");
         log("========================================");
         log("Endpoint: http://host.docker.internal:" + WEBHOOK_PORT + WEBHOOK_PATH);
 

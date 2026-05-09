@@ -1,5 +1,6 @@
 # Registro de Alterações (Changelog)
 
+<<<<<<< HEAD
 ## [2026-05-09] - Reestruturação do Fluxo de Validação do GuardRail (Sanitização, Heurística Síncrona e Zero-Shot/Few-Shot)
 
 ### Arquivos Modificados:
@@ -11,25 +12,29 @@
 A necessidade de otimizar o uso da CPU para avaliações óbvias que poderiam ser vetadas previamente (por heurística local ou cache) exigiu dividir o processamento em tarefas síncronas (recepção) e assíncronas. Simultaneamente, as respostas antigas da LLM (SAFE, UNSAFE, RISKY) estavam causando ruído de formatação e longos tempos de parsing. A adoção de *Zero-Shot* binário ("Aprovado/Reprovado") forçou o determinismo da resposta do modelo e maximizou o *fail-fast*, restando ao *Few-Shot* resolver apenas exceções severas de ambiguidade.
 
 ## [2026-04-30] - Correção de "upstream sent too big header" no Callback OAuth2
+=======
+## [2026-05-07] - Correção de Regressão de Vereditos UNCERTAIN por Timeout de Execução na Fila
+>>>>>>> 50e81ec12b19cfc272a3101d23c40c325e682ee3
 
 ### Arquivos Modificados:
-- `nginx/nginx.conf`: Aumentados buffers de proxy nas rotas `location = /oauth2/callback` e `location /oauth2/` (`proxy_buffer_size 64k`, `proxy_buffers 8 64k`, `proxy_busy_buffers_size 128k`) para suportar cabeçalhos de resposta maiores vindos do `oauth2-proxy`.
-- `docker-compose.yaml`: Adicionado `--session-cookie-minimal=true` no serviço `oauth2-proxy` para reduzir o tamanho do cookie de sessão e, consequentemente, o volume de `Set-Cookie` no callback OIDC.
+- `src/main/java/OllamaJobQueue.java`: Alterado o valor padrão de `OLLAMA_JOB_EXEC_TIMEOUT_SECONDS` para `0` (desativado), removendo cancelamentos automáticos não intencionais de jobs em execução. Mantida a possibilidade de ativação explícita do timeout por variável de ambiente para cenários de proteção operacional controlada.
+- `src/main/java/OllamaJobQueue.java`: Adicionada validação fail-fast para impedir configuração inválida (`OLLAMA_JOB_EXEC_TIMEOUT_SECONDS < 0`) durante a inicialização.
+- `src/main/java/OllamaJobQueue.java`: Ajustado o log de boot para explicitar se o timeout por job está ativo (segundos) ou desativado.
 
 ### Causa Raiz:
-Durante o callback OIDC, o Nginx recebia resposta do `oauth2-proxy` com cabeçalhos maiores que o buffer padrão, gerando o erro `upstream sent too big header while reading response header from upstream`. Isso disparava redirecionamentos repetidos para login e novos callbacks, produzindo loop de autenticação. A combinação de buffers maiores no Nginx com sessão mínima no `oauth2-proxy` elimina o gargalo estrutural e estabiliza o login sem intervenção manual.
+A introdução do watchdog de timeout por job com valor padrão ativo promoveu cancelamento preventivo de tarefas de classificação em cenários de latência variável. Quando o cancelamento ocorria antes da finalização da inferência, o fluxo de resultado convertia a execução excepcional em veredito `UNCERTAIN`, causando degradação funcional percebida como regressão sistêmica. A desativação por padrão restaura a semântica anterior de processamento, preservando previsibilidade dos vereditos e mantendo o mecanismo disponível apenas sob ativação explícita.
 
 ---
 
-## [2026-04-30] - Fallback Automático no Callback OAuth2 e Mensagem de Indisponibilidade
+## [2026-05-07] - Correção de Travamento no Prompt Crawler por Espera Infinita de Sinal de Prontidão
 
 ### Arquivos Modificados:
-- `nginx/nginx.conf`: Criado bloco `location = /oauth2/callback` com proxy dedicado ao `oauth2-proxy` e fallback automático `error_page 500 502 503 504 =302 /oauth2/sign_in?rd=/`. A alteração evita exibição de erro 500 ao usuário quando ocorre `invalid_grant` por callback duplicado e força um novo ciclo de login sem intervenção manual.
-- `nginx/nginx.conf`: Criado bloco `location /oauth2/` para encaminhar endpoints internos do oauth2-proxy (`/oauth2/sign_in`, `/oauth2/static`, etc.) com rota explícita.
-- `nginx/nginx.conf`: Atualizada a página `@auth_unavailable`, removendo a mensagem antiga de "configuração pendente" e substituindo por aviso genérico de indisponibilidade temporária da autenticação.
+- `scripts/prompt_crawler.py`: Substituída espera indefinida do estado de conclusão (`wait_for_function` com `timeout=0`) por timeout explícito vinculado a `MAX_PROCESSING_WAIT_SEC`, eliminando bloqueio infinito do ciclo de automação quando o atributo `data-agentk-ready` não é sinalizado.
+- `scripts/prompt_crawler.py`: Adicionada limpeza preventiva do atributo `data-agentk-ready` antes de cada submissão de prompt, reduzindo acoplamento com estado residual de execução anterior.
+- `scripts/prompt_crawler.py`: Implementado tratamento dedicado para `TimeoutError` com captura de evidência (screenshot) e recarga controlada da página para recuperação autônoma do fluxo de testes sem encerramento abrupto do processo.
 
 ### Causa Raiz:
-Os logs do oauth2-proxy mostravam alternância entre `AuthSuccess` e falhas posteriores `invalid_grant: Code not valid`, comportamento típico de callback repetido para um authorization code já consumido. Além disso, a página de fallback do Nginx mantinha texto legado que induzia diagnóstico incorreto de setup incompleto, mesmo com serviços já em execução. O novo fluxo torna a autenticação idempotente para o usuário final: em falha transitória de callback, o sistema redireciona automaticamente para novo login.
+O fluxo de sincronização do crawler dependia de sinalização assíncrona no DOM e utilizava uma espera sem limite temporal para detectar a conclusão do processamento. Em cenários de falha de emissão do sinal, atraso de renderização ou estado residual no atributo de prontidão, a automação permanecia bloqueada indefinidamente, aparentando travamento após poucos prompts. A correção introduz limites determinísticos de espera e estratégia de recuperação, preservando continuidade operacional e rastreabilidade diagnóstica.
 
 ---
 

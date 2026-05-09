@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict
+# pyrefly: ignore [missing-import]
 from playwright.sync_api import sync_playwright, Browser, Page, TimeoutError
 
 # === CONFIGURAÇÃO (CONSTANTES) ===
@@ -29,6 +30,10 @@ SCREENSHOTS_DIR = OUTPUT_DIR / "screenshots"
 
 MAX_PROCESSING_WAIT_SEC = 200 # Cobre a cadeia completa: Ollama (120s) + long-poll gateway (150s) + overhead de UI
 LOGIN_TIMEOUT_MS = 30000
+INPUT_REENABLE_WAIT_SEC = 20
+PROCESSING_SIGNAL_WAIT_MS = 8000
+MAX_RETRIES_PER_PROMPT = 2
+RETRY_BACKOFF_SEC = 2
 
 # Fail-Fast: Garante que os diretórios de saída existam antes de iniciar o log
 try:
@@ -136,11 +141,13 @@ class AgentKAutomation:
             # Aguarda o campo estar visível
             self.page.wait_for_selector(input_selector, state="visible")
             
-            # Fail-Fast: Aguarda explicitamente o campo ser habilitado (Streamlit re-enabling UI)
-            # O 'fill' do Playwright já tenta fazer isso, mas o loop garante rastreabilidade no log.
+            # Remove sinal antigo antes de um novo envio para evitar falso-positivo/falso-bloqueio.
+            self.page.evaluate("() => document.body.removeAttribute('data-agentk-ready')")
+
+            # Fail-Fast: Aguarda explicitamente o campo ser habilitado (Streamlit re-enabling UI).
             wait_enabled_start = time.time()
             while self.page.is_disabled(input_selector):
-                if time.time() - wait_enabled_start > 20: # 20s de tolerância para re-habilitação
+                if time.time() - wait_enabled_start > INPUT_REENABLE_WAIT_SEC:
                     raise TimeoutError(f"O campo de input {input_selector} permaneceu desabilitado após processamento anterior.")
                 time.sleep(0.5)
 
@@ -151,7 +158,7 @@ class AgentKAutomation:
             try:
                 self.page.wait_for_function(
                     "() => !document.body.hasAttribute('data-agentk-ready')", 
-                    timeout=5000
+                    timeout=PROCESSING_SIGNAL_WAIT_MS
                 )
                 logger.info("Processamento iniciado (sinal detectado)...")
             except:
@@ -179,6 +186,16 @@ class AgentKAutomation:
                 "screenshot": str(screenshot_path),
                 "content": content
             }
+        except TimeoutError as e:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timeout_img = SCREENSHOTS_DIR / f"timeout_{index}_{ts}.png"
+            self.page.screenshot(path=str(timeout_img), full_page=True)
+            logger.error(
+                f"Timeout ao processar prompt {index}: {e}. "
+                f"Screenshot salva em: {timeout_img}. Recarregando a página para recuperar o fluxo."
+            )
+            self.page.reload(wait_until="domcontentloaded")
+            return None
         except Exception as e:
             logger.error(f"Erro ao processar prompt {index}: {e}")
             return None
@@ -199,7 +216,23 @@ def main():
         bot.login()
         
         for i, prompt_text in enumerate(prompts, 1):
-            result = bot.process_prompt(prompt_text, i)
+            result = None
+            for attempt in range(1, MAX_RETRIES_PER_PROMPT + 2):
+                result = bot.process_prompt(prompt_text, i)
+                if result is not None:
+                    break
+
+                if attempt <= MAX_RETRIES_PER_PROMPT:
+                    logger.warning(
+                        f"Prompt {i} falhou na tentativa {attempt}. "
+                        f"Nova tentativa em {RETRY_BACKOFF_SEC}s..."
+                    )
+                    time.sleep(RETRY_BACKOFF_SEC)
+                else:
+                    logger.error(
+                        f"Prompt {i} falhou após {MAX_RETRIES_PER_PROMPT + 1} tentativas. "
+                        "Prosseguindo para o próximo prompt."
+                    )
             
             if result:
                 # Salva o texto coletado em arquivo individual
@@ -207,6 +240,11 @@ def main():
                 with open(result_file, "w", encoding="utf-8") as f:
                     f.write(f"--- PROMPT ---\n{result['prompt']}\n\n")
                     f.write(f"--- RESULTADO ---\n{result['content']}\n")
+            else:
+                failed_file = OUTPUT_DIR / f"resultado_{i}_failed.txt"
+                with open(failed_file, "w", encoding="utf-8") as f:
+                    f.write(f"--- PROMPT ---\n{prompt_text}\n\n")
+                    f.write("--- RESULTADO ---\nFALHA_APOS_RETRIES\n")
             
             # Estabilização entre prompts
             time.sleep(1)

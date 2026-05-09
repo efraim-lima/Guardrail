@@ -1,7 +1,6 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
@@ -24,44 +23,33 @@ import java.util.concurrent.ExecutorService;
 import java.util.regex.Pattern;
 
 /**
- * PromptValidator
- *
- * Endpoint HTTP para receber prompts do cliente MCP e retornar veredito.
- *
- * Fluxo assíncrono (estilo Redis + Celery):
- *   POST /validar            → submete à fila, retorna HTTP 202 com {job_id, status:"QUEUED"}
- *   GET  /resultado/{jobId}  → long-poll que aguarda o veredito do Ollama (sem timeout de conexão)
- *   GET  /health             → health-check do serviço
+ * PromptValidator - Endpoint de validação de segurança.
  */
 public class PromptValidator implements Runnable {
-    private static final String LOG_PREFIX         = "[PromptWebhook]";
-    private static final long   RESULT_POLL_TIMEOUT = Long.parseLong(
-            envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "150"));
+    private static final String LOG_PREFIX = "[PromptWebhook]";
+    private static final long RESULT_POLL_TIMEOUT = Long.parseLong(envOr("OLLAMA_RESULT_TIMEOUT_SECONDS", "150"));
 
-    private final int              port;
-    private final String           path;
-    private final OllamaJobQueue   jobQueue;
-    private final ExecutorService  executorService;
+    private final int port;
+    private final String path;
+    private final OllamaJobQueue jobQueue;
+    private final ExecutorService executorService;
 
-    // Cache local simulando Redis e Padrão de heurística para bloqueio imediato
     private final Map<String, String> cache = Collections.synchronizedMap(new LinkedHashMap<String, String>(128, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
             return size() > 100;
         }
     });
+    
     private static final Pattern BLOCKED_PATTERN = Pattern.compile("(?i).*(rm -rf|drop table|bypass|ignore todas as instru|ignorar todas as instru|esqueça todas).*");
 
     private volatile boolean running = true;
     private HttpServer server;
 
-    public PromptValidator(int port,
-                           String path,
-                           OllamaJobQueue jobQueue,
-                           ExecutorService executorService) {
-        this.port           = port;
-        this.path           = (path == null || path.isBlank()) ? "/validar" : path;
-        this.jobQueue       = jobQueue;
+    public PromptValidator(int port, String path, OllamaJobQueue jobQueue, ExecutorService executorService) {
+        this.port = port;
+        this.path = (path == null || path.isBlank()) ? "/validar" : path;
+        this.jobQueue = jobQueue;
         this.executorService = executorService;
     }
 
@@ -72,37 +60,26 @@ public class PromptValidator implements Runnable {
             if (keystorePath != null && !keystorePath.isBlank()) {
                 String keystorePass = System.getenv().getOrDefault("KEYSTORE_PASSWORD", "gateway-secret");
                 char[] password = keystorePass.toCharArray();
-                
                 KeyStore ks = KeyStore.getInstance("PKCS12");
-                try (FileInputStream fis = new FileInputStream(keystorePath)) {
-                    ks.load(fis, password);
-                }
-                
+                try (FileInputStream fis = new FileInputStream(keystorePath)) { ks.load(fis, password); }
                 KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
                 kmf.init(ks, password);
-                
                 TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
                 tmf.init(ks);
-                
                 SSLContext sslContext = SSLContext.getInstance("TLS");
                 sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
                 
                 HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress("0.0.0.0", port), 128);
                 httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
                     public void configure(HttpsParameters params) {
-                        try {
-                            SSLContext c = getSSLContext();
-                            params.setSSLParameters(c.getDefaultSSLParameters());
-                        } catch (Exception ex) {
-                            System.out.println("Erro ao configurar HTTPS");
-                        }
+                        try { params.setSSLParameters(getSSLContext().getDefaultSSLParameters()); } catch (Exception ex) {}
                     }
                 });
                 this.server = httpsServer;
-                log("Webhook de validação iniciado com HTTPS em https://0.0.0.0:" + port + path);
+                log("Webhook iniciado com HTTPS em https://0.0.0.0:" + port + path);
             } else {
                 this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 128);
-                log("Webhook de validação iniciado com HTTP em http://0.0.0.0:" + port + path);
+                log("Webhook iniciado com HTTP em http://0.0.0.0:" + port + path);
             }
             
             this.server.createContext(path, new ValidateHandler());
@@ -110,163 +87,100 @@ public class PromptValidator implements Runnable {
             this.server.createContext("/health", new HealthHandler());
             this.server.setExecutor(executorService);
             this.server.start();
-
+            
             log("Healthcheck em http(s)://0.0.0.0:" + port + "/health");
-            log("Resultado   em http(s)://0.0.0.0:" + port + "/resultado/{jobId}");
-
-            while (running) {
-                Thread.sleep(1000);
-            }
+            while (running) { Thread.sleep(1000); }
         } catch (Exception e) {
             logError("Falha no webhook: " + e.getMessage());
-        } finally {
-            stop();
-        }
+        } finally { stop(); }
     }
 
     public void stop() {
         running = false;
-        if (server != null) {
-            server.stop(0);
-            log("Webhook encerrado");
-        }
+        if (server != null) { server.stop(0); log("Webhook encerrado"); }
     }
 
-    /**
-     * POST /validar — Recebe o prompt, submete à fila assíncrona e retorna job_id imediatamente.
-     * HTTP 202 Accepted: {"job_id":"...","status":"QUEUED"}
-     * HTTP 503 Service Unavailable: quando a fila está saturada.
-     */
     private class ValidateHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-                    writeJson(exchange, 405, "{\"error\":\"Method not allowed\",\"allowed\":\"POST\"}");
+                    writeJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
                     return;
                 }
-
-                byte[] bodyBytes = readAll(exchange.getRequestBody());
-                String body = new String(bodyBytes, StandardCharsets.UTF_8);
-                String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-                String prompt = extractPrompt(body, contentType);
-
+                
+                String body = new String(readAll(exchange.getRequestBody()), StandardCharsets.UTF_8);
+                String prompt = extractPrompt(body, exchange.getRequestHeaders().getFirst("Content-Type"));
+                
                 if (prompt == null || prompt.isBlank()) {
                     writeJson(exchange, 400, "{\"error\":\"prompt ausente\"}");
                     return;
                 }
-
-                String sanitizedPrompt = sanitizeAndTruncate(prompt);
-
+                
+                String sanitized = sanitizeAndTruncate(prompt);
                 String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
-                AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp,
-                        "snippet=" + (sanitizedPrompt.length() > 50 ? sanitizedPrompt.substring(0, 50) : sanitizedPrompt));
+                boolean isTestFlow = "true".equalsIgnoreCase(exchange.getRequestHeaders().getFirst("X-Test-Flow"));
 
-                // 1. Consulta ao banco de cache local (heurística)
-                if (BLOCKED_PATTERN.matcher(sanitizedPrompt).matches()) {
-                    log("Bloqueado por heurística: " + sanitizedPrompt);
-                    String jobId = jobQueue.submitResolved(sanitizedPrompt, "Reprovado");
-                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "HEURISTIC_BLOCK", sourceIp, "prompt_length=" + sanitizedPrompt.length());
+                if (isTestFlow) { 
+                    AuditLogger.logTestVerdict(prompt, "RECEIVED", sourceIp); 
+                } else { 
+                    AuditLogger.log("anonymous", "PROMPT_VALIDATION", "prompt", "RECEIVED", sourceIp, 
+                        "snippet=" + (sanitized.length() > 50 ? sanitized.substring(0, 50) : sanitized)); 
+                }
+
+                // 1. Bloqueio Heurístico
+                if (BLOCKED_PATTERN.matcher(sanitized).matches()) {
+                    log("Bloqueado por heurística: " + sanitized);
+                    String jobId = jobQueue.submitResolved(sanitized, "Reprovado");
                     writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                     return;
                 }
-
-                String cachedVerdict = cache.get(sanitizedPrompt);
-                if (cachedVerdict != null) {
-                    log("Resolvido via cache: " + cachedVerdict);
-                    String jobId = jobQueue.submitResolved(sanitizedPrompt, cachedVerdict);
-                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "CACHE_HIT", sourceIp, "prompt_length=" + sanitizedPrompt.length());
+                
+                // 2. Cache local
+                String cached = cache.get(sanitized);
+                if (cached != null) {
+                    log("Cache hit: " + cached);
+                    String jobId = jobQueue.submitResolved(sanitized, cached);
                     writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
                     return;
                 }
-
-                // 2. Submete ao processamento assíncrono do Ollama
-                try {
-                    String jobId = jobQueue.submit(sanitizedPrompt);
-                    AuditLogger.log("anonymous", "JOB_QUEUED", jobId, "ACCEPTED", sourceIp,
-                            "prompt_length=" + sanitizedPrompt.length());
-                    writeJson(exchange, 202,
-                            "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
-                } catch (IllegalStateException e) {
-                    writeJson(exchange, 503,
-                            "{\"error\":\"queue_full\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}");
-                }
-            } catch (IOException e) {
-                logError("Conexão interrompida (IOException): " + e.getMessage());
+                
+                // 3. Fila assíncrona (Ollama)
+                String jobId = jobQueue.submit(sanitized, isTestFlow);
+                writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"QUEUED\"}");
+                
             } catch (Exception e) {
                 logError("Erro no /validar: " + e.getMessage());
-                try {
-                    writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
-                } catch (IOException ignore) {}
+                writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
             }
         }
     }
 
-    /**
-     * GET /resultado/{jobId} — Long-poll que bloqueia até o veredito do Ollama ficar pronto.
-     *
-     * HTTP 200: {"job_id":"...","prompt":"...","veredito":"SAFE","status":"DONE"}
-     * HTTP 202: {"job_id":"...","status":"PROCESSING"}  (timeout do servidor; cliente deve retentar)
-     * HTTP 404: {"error":"job_not_found","job_id":"..."}
-     */
     private class ResultHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
-                if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                    writeJson(exchange, 405, "{\"error\":\"Method not allowed\",\"allowed\":\"GET\"}");
-                    return;
-                }
-
-                // Extrai jobId do path: /resultado/{jobId}
                 String uriPath = exchange.getRequestURI().getPath();
-                String prefix  = "/resultado/";
+                String prefix = "/resultado/";
                 if (!uriPath.startsWith(prefix) || uriPath.length() <= prefix.length()) {
-                    writeJson(exchange, 400, "{\"error\":\"job_id ausente na URL\"}");
+                    writeJson(exchange, 400, "{\"error\":\"job_id ausente\"}");
                     return;
                 }
+                
                 String jobId = uriPath.substring(prefix.length());
-
                 if (!jobQueue.exists(jobId)) {
-                    writeJson(exchange, 404,
-                            "{\"error\":\"job_not_found\",\"job_id\":\"" + escapeJson(jobId) + "\"}");
+                    writeJson(exchange, 404, "{\"error\":\"job_not_found\"}");
                     return;
                 }
-
-                String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+                
                 OllamaJobQueue.AwaitResult result = jobQueue.awaitResult(jobId, RESULT_POLL_TIMEOUT);
-
-                switch (result.status) {
-                    case DONE:
-                        AuditLogger.log("anonymous", "JOB_RESULT", jobId, result.verdict,
-                                sourceIp, "status=DONE");
-                        writeJson(exchange, 200,
-                                "{\"job_id\":\""   + escapeJson(jobId)         + "\","
-                                + "\"prompt\":\""  + escapeJson(result.prompt)  + "\","
-                                + "\"veredito\":\"" + escapeJson(result.verdict) + "\","
-                                + "\"status\":\"DONE\"}");
-                        break;
-                    case PROCESSING:
-                        writeJson(exchange, 202,
-                                "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"PROCESSING\"}");
-                        break;
-                    default: // NOT_FOUND (corrida com TTL cleanup)
-                        writeJson(exchange, 404,
-                                "{\"error\":\"job_not_found\",\"job_id\":\"" + escapeJson(jobId) + "\"}");
-                        break;
+                if (result.status == OllamaJobQueue.JobStatus.DONE) {
+                    writeJson(exchange, 200, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"veredito\":\"" + escapeJson(result.verdict) + "\",\"status\":\"DONE\"}");
+                } else {
+                    writeJson(exchange, 202, "{\"job_id\":\"" + escapeJson(jobId) + "\",\"status\":\"PROCESSING\"}");
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                try {
-                    writeJson(exchange, 503, "{\"error\":\"server_interrupted\"}");
-                } catch (IOException ignore) {}
-            } catch (IOException e) {
-                logError("Conexão interrompida em /resultado: " + e.getMessage());
             } catch (Exception e) {
-                logError("Erro em /resultado: " + e.getMessage());
-                try {
-                    writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
-                } catch (IOException ignore) {}
+                writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
             }
         }
     }
@@ -274,146 +188,62 @@ public class PromptValidator implements Runnable {
     private class HealthHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            writeJson(exchange, 200,
-                    "{\"status\":\"ok\",\"pending_jobs\":" + jobQueue.pendingCount() + "}");
+            writeJson(exchange, 200, "{\"status\":\"UP\"}");
         }
     }
 
     private static byte[] readAll(InputStream in) throws IOException {
-        byte[] buffer = new byte[4096];
-        int n;
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        while ((n = in.read(buffer)) != -1) {
-            out.write(buffer, 0, n);
-        }
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = in.read(buf)) != -1) { out.write(buf, 0, n); }
         return out.toByteArray();
     }
 
     private static String extractPrompt(String body, String contentType) {
-        if (body == null) {
-            return null;
+        if (body == null) return null;
+        if (body.trim().startsWith("{")) {
+            String p = extractJsonStringField(body, "prompt");
+            if (p != null) return p;
+            p = extractJsonStringField(body, "input");
+            if (p != null) return p;
+            return extractJsonStringField(body, "message");
         }
-
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        if (ct.contains("application/json") || body.trim().startsWith("{")) {
-            String fromPrompt = extractJsonStringField(body, "prompt");
-            if (fromPrompt != null && !fromPrompt.isBlank()) {
-                return fromPrompt;
-            }
-            String fromInput = extractJsonStringField(body, "input");
-            if (fromInput != null && !fromInput.isBlank()) {
-                return fromInput;
-            }
-            String fromMessage = extractJsonStringField(body, "message");
-            if (fromMessage != null && !fromMessage.isBlank()) {
-                return fromMessage;
-            }
-            return null;
-        }
-
         return body.trim();
     }
 
-    /**
-     * Sanitiza a entrada removendo caracteres de controle e limita a 300 palavras.
-     */
     private static String sanitizeAndTruncate(String input) {
         if (input == null) return "";
-        // Remove caracteres de controle invisíveis, exceto quebras de linha e tabs
-        String sanitized = input.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "");
-        
-        // Trunca para o máximo de 300 palavras
-        String[] words = sanitized.split("\\s+");
-        if (words.length > 300) {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 300; i++) {
-                sb.append(words[i]).append(" ");
-            }
-            return sb.toString().trim();
-        }
-        return sanitized.trim();
+        String s = input.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "");
+        String[] w = s.split("\\s+");
+        if (w.length <= 300) return s.trim();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 300; i++) { sb.append(w[i]).append(" "); }
+        return sb.toString().trim();
     }
 
     private static String extractJsonStringField(String json, String field) {
         String token = "\"" + field + "\"";
         int idx = json.indexOf(token);
-        if (idx < 0) {
-            return null;
-        }
-
+        if (idx < 0) return null;
         int colon = json.indexOf(':', idx + token.length());
-        if (colon < 0) {
-            return null;
-        }
-
-        int firstQuote = -1;
-        for (int i = colon + 1; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '"') {
-                firstQuote = i;
-                break;
-            }
-            if (!Character.isWhitespace(c)) {
-                return null;
-            }
-        }
-
-        if (firstQuote < 0) {
-            return null;
-        }
-
+        if (colon < 0) return null;
+        int firstQuote = json.indexOf('"', colon + 1);
+        if (firstQuote < 0) return null;
         StringBuilder sb = new StringBuilder();
-        boolean escaped = false;
+        boolean esc = false;
         for (int i = firstQuote + 1; i < json.length(); i++) {
             char c = json.charAt(i);
-            if (escaped) {
-                switch (c) {
-                    case 'n':
-                        sb.append('\n');
-                        break;
-                    case 'r':
-                        sb.append('\r');
-                        break;
-                    case 't':
-                        sb.append('\t');
-                        break;
-                    case '"':
-                        sb.append('"');
-                        break;
-                    case '\\':
-                        sb.append('\\');
-                        break;
-                    case 'u':
-                        // Decodifica sequencias Unicode uXXXX (ex: u00e7 = c com cedilha)
-                        if (i + 4 < json.length()) {
-                            String hex = json.substring(i + 1, i + 5);
-                            try {
-                                sb.append((char) Integer.parseInt(hex, 16));
-                                i += 4;
-                            } catch (NumberFormatException nfe) {
-                                sb.append('u');
-                            }
-                        } else {
-                            sb.append('u');
-                        }
-                        break;
-                    default:
-                        sb.append(c);
-                        break;
-                }
-                escaped = false;
-                continue;
+            if (esc) {
+                if (c == 'n') sb.append('\n'); else if (c == 'r') sb.append('\r'); else if (c == 't') sb.append('\t');
+                else if (c == '"') sb.append('"'); else if (c == '\\') sb.append('\\');
+                else sb.append(c);
+                esc = false; continue;
             }
-            if (c == '\\') {
-                escaped = true;
-                continue;
-            }
-            if (c == '"') {
-                return sb.toString();
-            }
+            if (c == '\\') { esc = true; continue; }
+            if (c == '"') return sb.toString();
             sb.append(c);
         }
-
         return null;
     }
 
@@ -421,33 +251,19 @@ public class PromptValidator implements Runnable {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(bytes);
-        }
+        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
     }
 
-    private static String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+    private static String escapeJson(String v) {
+        if (v == null) return "";
+        return v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
-    private static String envOr(String key, String fallback) {
-        String value = System.getenv(key);
-        return (value != null && !value.isBlank()) ? value : fallback;
+    private static String envOr(String k, String f) {
+        String v = System.getenv(k);
+        return (v != null && !v.isBlank()) ? v : f;
     }
 
-    private static void log(String msg) {
-        System.out.println(LOG_PREFIX + " " + msg);
-    }
-
-    private static void logError(String msg) {
-        System.err.println(LOG_PREFIX + " [ERROR] " + msg);
-    }
+    private static void log(String msg) { System.out.println(LOG_PREFIX + " " + msg); }
+    private static void logError(String msg) { System.err.println(LOG_PREFIX + " [ERROR] " + msg); }
 }

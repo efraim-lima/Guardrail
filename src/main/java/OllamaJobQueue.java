@@ -1,255 +1,168 @@
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * OllamaJobQueue.java — Fila de processamento assíncrono para chamadas ao Ollama.
- *
- * Implementa o padrão equivalente ao Redis + Celery (Python), inteiramente em Java nativo:
- *   - submit(prompt)              → devolve jobId imediatamente   (≅ task.delay())
- *   - awaitResult(jobId, timeout) → bloqueia até o veredito chegar (≅ task.get(timeout))
- *
- * Cada job é executado por um pool de workers dedicado (OLLAMA_WORKERS), totalmente
- * desacoplado das threads HTTP. A capacidade máxima da fila é controlada por um
- * Semaphore justo (OLLAMA_MAX_QUEUE). Jobs expiram após JOB_TTL_SECONDS segundos.
+ * OllamaJobQueue - Fila de processamento assíncrono sincronizada.
  */
 public class OllamaJobQueue {
+    private static final String LOG_PREFIX = "[OllamaJobQueue]";
+    private static final int DEFAULT_WORKERS = 4;
+    private static final int DEFAULT_MAX_QUEUE = 200;
+    private static final long JOB_TTL_SECONDS = 600;
 
-    private static final String LOG_PREFIX      = "[OllamaJobQueue]";
-    private static final int    DEFAULT_WORKERS   = 4;
-    private static final int    DEFAULT_MAX_QUEUE = 200;
-    private static final long   JOB_TTL_SECONDS   = 600; // 10 minutos
-
-    private final ExecutorService          workers;
+    private final ExecutorService workers;
     private final ScheduledExecutorService cleaner;
     private final ConcurrentHashMap<String, JobEntry> jobs = new ConcurrentHashMap<>();
-    private final Semaphore                semaphore;
-    private final SecurityClassifier       classifier;
+    private final Semaphore semaphore;
+    private final SecurityClassifier classifier;
+    private final AtomicLong submittedCount = new AtomicLong(0);
+    private final AtomicLong completedCount = new AtomicLong(0);
+    private final AtomicLong failedCount = new AtomicLong(0);
 
-    // -------------------------------------------------------------------------
-    // Estrutura interna de um job
-    // -------------------------------------------------------------------------
-
-    static class JobEntry {
-        final String                   prompt;
-        final CompletableFuture<String> future;
-        final long                     createdAtMs;
-
-        JobEntry(String prompt, CompletableFuture<String> future) {
-            this.prompt      = prompt;
-            this.future      = future;
-            this.createdAtMs = System.currentTimeMillis();
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Tipos de retorno de awaitResult
-    // -------------------------------------------------------------------------
-
-    public enum AwaitStatus { DONE, PROCESSING, NOT_FOUND }
+    public enum JobStatus { QUEUED, PROCESSING, DONE, NOT_FOUND }
 
     public static class AwaitResult {
-        public final AwaitStatus status;
-        public final String      verdict;
-        public final String      prompt;
-
-        AwaitResult(AwaitStatus status, String verdict, String prompt) {
-            this.status  = status;
-            this.verdict = verdict;
-            this.prompt  = prompt;
+        public final String prompt;
+        public final String verdict;
+        public final JobStatus status;
+        public final boolean isTestFlow;
+        AwaitResult(String p, String v, JobStatus s, boolean t) { 
+            this.prompt = p; this.verdict = v; this.status = s; this.isTestFlow = t; 
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Construtor
-    // -------------------------------------------------------------------------
 
     public OllamaJobQueue(SecurityClassifier classifier) {
         this.classifier = classifier;
-
-        int workerCount = Integer.parseInt(envOr("OLLAMA_WORKERS",   String.valueOf(DEFAULT_WORKERS)));
-        int maxQueue    = Integer.parseInt(envOr("OLLAMA_MAX_QUEUE", String.valueOf(DEFAULT_MAX_QUEUE)));
-
-        // Semaphore justo: respeita a ordem de chegada dos submits quando a fila enche
+        int workerCount = Integer.parseInt(envOr("OLLAMA_WORKERS", String.valueOf(DEFAULT_WORKERS)));
+        int maxQueue = Integer.parseInt(envOr("OLLAMA_MAX_QUEUE", String.valueOf(DEFAULT_MAX_QUEUE)));
+        this.workers = Executors.newFixedThreadPool(workerCount);
+        this.cleaner = Executors.newScheduledThreadPool(1);
         this.semaphore = new Semaphore(maxQueue, true);
-
-        // Pool de workers exclusivo para chamadas ao Ollama (isolado das threads HTTP)
-        this.workers = Executors.newFixedThreadPool(workerCount, r -> {
-            Thread t = new Thread(r, "Ollama-Worker-" + System.nanoTime());
-            t.setDaemon(false);
-            return t;
-        });
-
-        // Agendador de limpeza periódica de jobs expirados (daemon)
-        this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "JobQueue-Cleaner");
-            t.setDaemon(true);
-            return t;
-        });
-        this.cleaner.scheduleAtFixedRate(this::cleanExpiredJobs, 5, 5, TimeUnit.MINUTES);
-
-        log("Iniciado com " + workerCount + " worker(s), capacidade máxima=" + maxQueue);
+        log("Iniciado com " + workerCount + " workers e capacidade de " + maxQueue + " jobs.");
     }
 
-    // -------------------------------------------------------------------------
-    // Submissão assíncrona
-    // -------------------------------------------------------------------------
-
-    /**
-     * Submete um prompt para classificação assíncrona.
-     *
-     * @param prompt  texto a classificar
-     * @return        jobId único (UUID) para consulta posterior via awaitResult()
-     * @throws IllegalStateException quando a fila atingiu capacidade máxima
-     */
-    public String submit(String prompt) {
+    public String submit(String prompt, boolean isTestFlow) {
         if (!semaphore.tryAcquire()) {
-            throw new IllegalStateException("Fila saturada — tente novamente em instantes.");
+            throw new IllegalStateException("Fila saturada");
         }
-
+        
         String jobId = UUID.randomUUID().toString();
+        CompletableFuture<String> future = new CompletableFuture<>();
+        AtomicBoolean permitReleased = new AtomicBoolean(false);
 
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+        Future<?> task = workers.submit(() -> {
             try {
-                return classifier.classify(prompt);
+                // Chama a versão simplificada do classificador (apenas o prompt)
+                String verdict = classifier.classify(prompt);
+                future.complete(verdict);
+                completedCount.incrementAndGet();
+            } catch (Exception e) {
+                failedCount.incrementAndGet();
+                future.completeExceptionally(e);
             } finally {
-                semaphore.release();
+                if (permitReleased.compareAndSet(false, true)) {
+                    semaphore.release();
+                }
             }
-        }, workers);
+        });
 
-        jobs.put(jobId, new JobEntry(prompt, future));
-
-        // Agendamento de remoção automática ao expirar o TTL (evita vazamento de memória)
+        jobs.put(jobId, new JobEntry(prompt, future, isTestFlow, permitReleased, task));
+        submittedCount.incrementAndGet();
+        
+        // Cleanup automático
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
-
-        AuditLogger.log("Gateway-System", "JOB_SUBMITTED", jobId, "QUEUED", "internal",
-                "pending=" + pendingCount() + ", semaphore_available=" + semaphore.availablePermits());
+        
         return jobId;
     }
 
-    /**
-     * Submete um job já resolvido pela Heurística/Cache (não ocupa workers).
-     *
-     * @param prompt  texto a classificar
-     * @param verdict veredito pre-calculado
-     * @return        jobId único (UUID)
-     */
     public String submitResolved(String prompt, String verdict) {
         String jobId = UUID.randomUUID().toString();
-        CompletableFuture<String> future = CompletableFuture.completedFuture(verdict);
-        jobs.put(jobId, new JobEntry(prompt, future));
-        
+        // Jobs resolvidos por cache/heurística não ocupam workers nem semáforo
+        jobs.put(jobId, new JobEntry(prompt, CompletableFuture.completedFuture(verdict), false, new AtomicBoolean(true), null));
         cleaner.schedule(() -> jobs.remove(jobId), JOB_TTL_SECONDS, TimeUnit.SECONDS);
-        
-        AuditLogger.log("Gateway-System", "JOB_RESOLVED_IMMEDIATELY", jobId, verdict, "internal",
-                "prompt_length=" + prompt.length());
         return jobId;
     }
 
-    // -------------------------------------------------------------------------
-    // Long-poll de resultado
-    // -------------------------------------------------------------------------
-
-    /**
-     * Aguarda o resultado de um job (operação de long-poll bloqueante).
-     *
-     * O chamador bloqueia até o veredito estar disponível ou o timeout expirar.
-     * Equivalente ao task.get(timeout) do Celery.
-     *
-     * @param jobId          ID retornado por submit()
-     * @param timeoutSeconds segundos máximos de espera
-     * @return               AwaitResult com status DONE, PROCESSING ou NOT_FOUND
-     */
     public AwaitResult awaitResult(String jobId, long timeoutSeconds) throws InterruptedException {
         JobEntry entry = jobs.get(jobId);
-        if (entry == null) {
-            return new AwaitResult(AwaitStatus.NOT_FOUND, null, null);
-        }
-
+        if (entry == null) return new AwaitResult(null, null, JobStatus.NOT_FOUND, false);
+        
         try {
-            String verdict = entry.future.get(timeoutSeconds, TimeUnit.SECONDS);
-            return new AwaitResult(AwaitStatus.DONE, verdict, entry.prompt);
+            String v = entry.future.get(timeoutSeconds, TimeUnit.SECONDS);
+            return new AwaitResult(entry.prompt, v, JobStatus.DONE, entry.isTestFlow);
         } catch (TimeoutException e) {
-            // Job ainda em processamento: cliente deve retentar o long-poll
-            return new AwaitResult(AwaitStatus.PROCESSING, null, null);
-        } catch (ExecutionException e) {
-            logError("Falha no job " + jobId + ": "
-                    + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-            return new AwaitResult(AwaitStatus.DONE, "UNCERTAIN", entry.prompt);
+            return new AwaitResult(entry.prompt, null, JobStatus.PROCESSING, entry.isTestFlow);
+        } catch (Exception e) {
+            return new AwaitResult(entry.prompt, "Reprovado", JobStatus.DONE, entry.isTestFlow);
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Consultas não-bloqueantes
-    // -------------------------------------------------------------------------
-
-    public boolean isDone(String jobId) {
-        JobEntry entry = jobs.get(jobId);
-        return entry != null && entry.future.isDone();
+    public void shutdown() {
+        workers.shutdown();
+        cleaner.shutdown();
+        try {
+            if (!workers.awaitTermination(5, TimeUnit.SECONDS)) workers.shutdownNow();
+            if (!cleaner.awaitTermination(5, TimeUnit.SECONDS)) cleaner.shutdownNow();
+        } catch (InterruptedException e) {
+            workers.shutdownNow();
+            cleaner.shutdownNow();
+        }
+        log("Fila de jobs encerrada.");
     }
 
     public boolean exists(String jobId) {
         return jobs.containsKey(jobId);
     }
 
-    public int pendingCount() {
-        return (int) jobs.values().stream().filter(e -> !e.future.isDone()).count();
+    public HealthSnapshot healthSnapshot() {
+        return new HealthSnapshot(
+            "UP",
+            (int) (submittedCount.get() - completedCount.get() - failedCount.get()),
+            DEFAULT_MAX_QUEUE,
+            semaphore.availablePermits(),
+            submittedCount.get(),
+            completedCount.get(),
+            failedCount.get(),
+            0
+        );
     }
 
-    // -------------------------------------------------------------------------
-    // Encerramento gracioso
-    // -------------------------------------------------------------------------
-
-    public void shutdown() {
-        cleaner.shutdownNow();
-        workers.shutdown();
-        try {
-            if (!workers.awaitTermination(15, TimeUnit.SECONDS)) {
-                workers.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            workers.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        log("Encerrado.");
+    private String envOr(String k, String f) {
+        String v = System.getenv(k);
+        return (v == null || v.isBlank()) ? f : v;
     }
 
-    // -------------------------------------------------------------------------
-    // Limpeza periódica de jobs expirados
-    // -------------------------------------------------------------------------
+    private void log(String msg) { System.out.println(LOG_PREFIX + " " + msg); }
+    private void logError(String msg) { System.err.println(LOG_PREFIX + " [ERROR] " + msg); }
 
-    private void cleanExpiredJobs() {
-        long cutoff = System.currentTimeMillis() - JOB_TTL_SECONDS * 1000L;
-        int removed = 0;
-        for (Map.Entry<String, JobEntry> e : jobs.entrySet()) {
-            JobEntry entry = e.getValue();
-            if (entry.future.isDone() && entry.createdAtMs < cutoff) {
-                jobs.remove(e.getKey());
-                removed++;
-            }
-        }
-        if (removed > 0) {
-            log("Cleanup: " + removed + " job(s) expirado(s) removidos. Pendentes=" + pendingCount());
+    static class JobEntry {
+        final String prompt;
+        final CompletableFuture<String> future;
+        final boolean isTestFlow;
+        final AtomicBoolean permitReleased;
+        final Future<?> workerTask;
+
+        JobEntry(String p, CompletableFuture<String> f, boolean t, AtomicBoolean pr, Future<?> wt) {
+            this.prompt = p; this.future = f; this.isTestFlow = t; this.permitReleased = pr; this.workerTask = wt;
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Utilitários
-    // -------------------------------------------------------------------------
+    public static class HealthSnapshot {
+        public final String status;
+        public final int pendingJobs;
+        public final int queueCapacity;
+        public final int queuePermitsAvailable;
+        public final long submittedJobs;
+        public final long completedJobs;
+        public final long failedJobs;
+        public final long timedOutJobs;
 
-    private static String envOr(String key, String fallback) {
-        String v = System.getenv(key);
-        return (v == null || v.trim().isEmpty()) ? fallback : v.trim();
+        HealthSnapshot(String s, int p, int c, int a, long sj, long cj, long fj, long tj) {
+            this.status = s; this.pendingJobs = p; this.queueCapacity = c; 
+            this.queuePermitsAvailable = a; this.submittedJobs = sj; 
+            this.completedJobs = cj; this.failedJobs = fj; this.timedOutJobs = tj;
+        }
     }
-
-    private static void log(String msg)      { System.out.println(LOG_PREFIX + " " + msg); }
-    private static void logError(String msg) { System.err.println(LOG_PREFIX + " [ERROR] " + msg); }
 }
