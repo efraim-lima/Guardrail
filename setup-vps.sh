@@ -338,7 +338,9 @@ except Exception:
             /opt/keycloak/bin/kcadm.sh create users -r agentk \
             -s username=k8s-admin \
             -s email=k8sadmin@agentk.internal \
-            -s enabled=true -s emailVerified=true 2>/dev/null || true
+            -s enabled=true \
+            -s emailVerified=true \
+            -s 'requiredActions=[]' 2>/dev/null || true
         user_id=$(docker exec keycloak \
             /opt/keycloak/bin/kcadm.sh get users -r agentk -q username=k8s-admin \
             2>/dev/null \
@@ -353,6 +355,13 @@ except Exception:
     fi
 
     if [[ -n "$user_id" ]]; then
+        # Remove required actions antes de definir a senha — sem isso o Direct Access Grant
+        # falha com "Account is not fully set up" mesmo com senha correta.
+        docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh update "users/${user_id}" -r agentk \
+            -s 'requiredActions=[]' \
+            -s enabled=true \
+            -s emailVerified=true 2>/dev/null || true
         docker exec keycloak \
             /opt/keycloak/bin/kcadm.sh set-password -r agentk \
             --userid "$user_id" --new-password "$k8s_pass" --temporary=false 2>/dev/null || true

@@ -64,6 +64,7 @@
       "emailVerified": true,
       "firstName": "K8s",
       "lastName": "Admin",
+      "requiredActions": [],
       "credentials": [
         {
           "type": "password",
