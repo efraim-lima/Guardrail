@@ -353,7 +353,7 @@ services:
       - --trusted-proxy-ip=${trusted_ip3}
       - --cookie-secret=${cookie_secret}
       - --cookie-secure=true
-      - --cookie-samesite=lax
+      - --cookie-samesite=none
       - --session-cookie-minimal=true
       - --insecure-oidc-allow-unverified-email=true
       - --skip-auth-route=GET=^/favicon\.ico\$

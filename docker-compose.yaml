@@ -240,7 +240,10 @@ services:
       - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}
       # true = cookie com flag Secure (exige HTTPS — correto pois nginx termina TLS)
       - --cookie-secure=true
-      - --cookie-samesite=lax
+      # none+secure: necessario para fluxos OAuth com provedores externos (Google).
+      # Com lax, o browser nao envia o cookie CSRF no redirect cross-site
+      # Google -> Keycloak -> /oauth2/callback, causando "Unable to find a valid CSRF token".
+      - --cookie-samesite=none
       # Mantem cookie de sessao minimo para reduzir tamanho de headers no callback.
       - --session-cookie-minimal=true
       # Evita falha de callback quando o usuario do Keycloak nao tem email_verified=true.
