@@ -127,6 +127,8 @@ services:
       - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://agentk.local}
+      # Usuário k8s-admin para validação de prompts RISKY (não expor a senha diretamente)
+      - K8S_ADMIN_USERNAME=${K8S_ADMIN_USERNAME:-k8s-admin}
     volumes:
       - agentk-logs:/var/log/agentk
     networks:
@@ -172,6 +174,8 @@ services:
       # Substitua pelos valores reais obtidos no Google Cloud Console.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-CHANGE_ME}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
+      # Senha do usuário k8s-admin usado para autorizar prompts RISKY.
+      - K8S_ADMIN_PASSWORD=${K8S_ADMIN_PASSWORD:-changeme}
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/

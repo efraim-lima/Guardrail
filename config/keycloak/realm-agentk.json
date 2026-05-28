@@ -48,7 +48,31 @@
       }
     }
   ],
+  "roles": {
+    "realm": [
+      {
+        "name": "k8s-admin",
+        "description": "Permite autorizar operações classificadas como RISKY pelo Gateway"
+      }
+    ]
+  },
   "users": [
+    {
+      "username": "k8s-admin",
+      "email": "k8sadmin@agentk.internal",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "K8s",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__K8S_ADMIN_PASSWORD__",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["k8s-admin"]
+    },
     {
       "username": "efraim.alima@gmail.com",
       "email": "efraim.alima@gmail.com",
@@ -133,6 +157,17 @@
       "attributes": {
         "post.logout.redirect.uris": "*"
       }
+    },
+    {
+      "clientId": "agentk-internal",
+      "name": "AgentK Internal Validator",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect"
     }
   ]
 }

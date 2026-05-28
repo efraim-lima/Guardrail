@@ -139,9 +139,26 @@ configure_keycloak_credentials() {
 }
 
 # ---------------------------------------------------------------------------
-# Detecta / solicita o hostname público da VPS (IP ou domínio)
+# Senha do usuário k8s-admin (autentica prompts RISKY)
 # ---------------------------------------------------------------------------
-is_ip_address() {
+configure_k8s_admin() {
+    local current_pass="${K8S_ADMIN_PASSWORD:-changeme}"
+    local input_pass
+
+    echo ""
+    echo -e "${BOLD}Senha do administrador K8s (autorização de prompts RISKY)${NC}"
+    echo -e "Esta senha será solicitada quando o Gateway classificar um prompt como RISKY."
+    echo -e "Não é a mesma senha do painel Keycloak. Pressione ENTER para manter."
+    echo ""
+
+    read -r -s -p "Senha k8s-admin [${current_pass:0:3}***]: " input_pass || true
+    echo ""
+    [[ -n "${input_pass:-}" ]] && current_pass="$input_pass"
+
+    upsert_env "K8S_ADMIN_PASSWORD" "$current_pass"
+    upsert_env "K8S_ADMIN_USERNAME" "${K8S_ADMIN_USERNAME:-k8s-admin}"
+    log_ok "Senha k8s-admin configurada."
+}
     [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
@@ -385,6 +402,7 @@ services:
       - KC_IMPORT=/tmp/realm-agentk.json
       - GOOGLE_CLIENT_ID=\${GOOGLE_CLIENT_ID:-CHANGE_ME}
       - GOOGLE_CLIENT_SECRET=\${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
+      - K8S_ADMIN_PASSWORD=\${K8S_ADMIN_PASSWORD:-changeme}
 
   # ---------------------------------------------------------------------------
   # OAuth2 Proxy: todas as URLs públicas substituídas pelo hostname real.
@@ -530,6 +548,8 @@ main() {
     ensure_env_file
     load_env
     configure_keycloak_credentials
+    load_env
+    configure_k8s_admin
     load_env
     configure_vps_hostname
     load_env

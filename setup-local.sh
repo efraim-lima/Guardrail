@@ -125,9 +125,26 @@ configure_keycloak_credentials() {
 }
 
 # ---------------------------------------------------------------------------
-# Domínio customizado (opcional) — permite acessar via DuckDNS etc. mesmo local
+# Senha do usuário k8s-admin (autentica prompts RISKY)
 # ---------------------------------------------------------------------------
-configure_custom_domain() {
+configure_k8s_admin() {
+    local current_pass="${K8S_ADMIN_PASSWORD:-changeme}"
+    local input_pass
+
+    echo ""
+    echo -e "${BOLD}Senha do administrador K8s (autorização de prompts RISKY)${NC}"
+    echo -e "Esta senha será solicitada quando o Gateway classificar um prompt como RISKY."
+    echo -e "Não é a mesma senha do painel Keycloak. Pressione ENTER para manter."
+    echo ""
+
+    read -r -s -p "Senha k8s-admin [${current_pass:0:3}***]: " input_pass || true
+    echo ""
+    [[ -n "${input_pass:-}" ]] && current_pass="$input_pass"
+
+    upsert_env "K8S_ADMIN_PASSWORD" "$current_pass"
+    upsert_env "K8S_ADMIN_USERNAME" "${K8S_ADMIN_USERNAME:-k8s-admin}"
+    log_ok "Senha k8s-admin configurada."
+}
     local current_domain
     current_domain="$(strip_scheme_local "${CUSTOM_DOMAIN:-}")"
 
@@ -396,6 +413,8 @@ main() {
     ensure_env_file
     load_env
     configure_keycloak_credentials
+    load_env
+    configure_k8s_admin
     load_env
     configure_custom_domain
     load_env

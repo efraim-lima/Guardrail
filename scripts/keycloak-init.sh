@@ -14,6 +14,7 @@ mkdir -p /opt/keycloak/data/import
 sed \
   -e "s@__GOOGLE_CLIENT_ID__@${GOOGLE_CLIENT_ID}@g" \
   -e "s@__GOOGLE_CLIENT_SECRET__@${GOOGLE_CLIENT_SECRET}@g" \
+  -e "s@__K8S_ADMIN_PASSWORD__@${K8S_ADMIN_PASSWORD:-changeme}@g" \
   "$REALM_SRC" > "$REALM_DST"
 
 echo "[keycloak-init] Realm gerado em $REALM_DST"
