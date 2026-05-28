@@ -419,6 +419,12 @@ start_stack() {
     log_info "Subindo todos os serviços..."
     docker compose up -d --build
     log_ok "Stack iniciada."
+
+    # Recarrega a configuração do nginx para forçar re-resolução de DNS.
+    # Necessário quando o nginx sobe antes do Keycloak/oauth2-proxy estar prontos.
+    log_info "Recarregando nginx (flush DNS)..."
+    sleep 3
+    docker exec nginx nginx -s reload 2>/dev/null && log_ok "nginx recarregado." || log_warn "nginx reload falhou (ignorado)."
 }
 
 # ---------------------------------------------------------------------------
