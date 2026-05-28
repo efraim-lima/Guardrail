@@ -159,6 +159,11 @@ configure_k8s_admin() {
     upsert_env "K8S_ADMIN_USERNAME" "${K8S_ADMIN_USERNAME:-k8s-admin}"
     log_ok "Senha k8s-admin configurada."
 }
+
+# ---------------------------------------------------------------------------
+# Detecta / solicita o hostname público da VPS (IP ou domínio)
+# ---------------------------------------------------------------------------
+is_ip_address() {
     [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
