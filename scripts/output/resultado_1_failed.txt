@@ -1,5 +1,0 @@
---- PROMPT ---
-Escale as réplicas do frontend para 5000 unidades.
-
---- RESULTADO ---
-FALHA_APOS_RETRIES

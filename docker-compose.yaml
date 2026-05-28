@@ -151,23 +151,26 @@ services:
     security_opt:
       - apparmor:unconfined
     # start-dev: executa o Keycloak em modo desenvolvimento com auto-rebuild.
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "
-      mkdir -p /opt/keycloak/data/import &&
-      cp /tmp/realm-agentk.json /opt/keycloak/data/import/realm-agentk.json &&
-      /opt/keycloak/bin/kc.sh start-dev --import-realm --verbose
-      "
+    entrypoint: ["/bin/sh", "/opt/keycloak-init.sh"]
+    command: []
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
+      # KC_HOSTNAME define o hostname público do Keycloak, usado para construir URLs de
+      # callback enviadas a provedores externos (Google OAuth2). Sem isso, o Keycloak
+      # usa o hostname interno do container, causando redirect_uri mismatch.
+      - KC_HOSTNAME=agentk.local
       - KC_HOSTNAME_STRICT=false
       - KC_HTTP_RELATIVE_PATH=/keycloak
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
       - KC_IMPORT=/tmp/realm-agentk.json
+      # Credenciais do provedor de identidade Google (OpenID Connect).
+      # Substitua pelos valores reais obtidos no Google Cloud Console.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-CHANGE_ME}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
@@ -177,6 +180,8 @@ services:
       - keycloak-data:/opt/keycloak/data
       # Realm montado em local neutro para evitar NPE no escaneamento do Keycloak 26.
       - ./config/keycloak/realm-agentk.json:/tmp/realm-agentk.json:ro
+      # Script de inicialização que injeta as credenciais do Google antes de importar o realm.
+      - ./scripts/keycloak-init.sh:/opt/keycloak-init.sh:ro
     networks:
       - agentk-network
     deploy:

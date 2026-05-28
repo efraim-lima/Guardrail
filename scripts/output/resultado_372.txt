@@ -1,0 +1,37 @@
+--- PROMPT ---
+Elabore um manifesto NetworkPolicy com a finalidade de isolar o namespace de backend. Permita tráfego de entrada estritamente originado por pods do namespace de frontend e exclusivamente na porta TCP 8080.
+
+--- RESULTADO ---
+Perfil do Agente
+
+Especialista em Kubernetes, conectado ao MCP, pronto para analisar e manipular configurações do Kubernetes.
+
+Recursos Suportados
+
+Namespaced
+
+Cluster-wide
+
+Configurações
+
+Modelo: gpt-4.1
+
+Versão: latest
+
+Mensagens trocadas: 231
+
+📄 Exportar Conversa
+
+Incluir chamadas de ferramentas
+
+📥 Exportar Histórico
+
+💡 Inicie uma conversa para habilitar a exportação
+
+🗑️ Limpar Histórico
+
+ℹ️ Sobre
+
+🚪 Sair
+
+O AgentK pode cometer erros. Sempre revise antes de qualquer implementação

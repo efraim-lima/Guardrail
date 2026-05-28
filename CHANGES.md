@@ -1,6 +1,98 @@
 # Registro de Alterações (Changelog)
 
-## [2026-05-09] - Otimização da Resiliência e Desacoplamento de Dependências do Keycloak (v26)
+## [2026-05-28] - Criação do script de setup para instâncias VPS na nuvem
+
+### Arquivos Modificados:
+- `setup2.sh` [NOVO]: Script de inicialização da stack Docker adaptado para implantação em instâncias VPS na nuvem (AWS EC2, Oracle Cloud, GCP, etc.). Diferencia-se do `setup.sh` (voltado para uso local com hostname `agentk.local`) pelas seguintes responsabilidades adicionais: (1) detecção automática do IP público via AWS IMDSv1 (`169.254.169.254`), Oracle Cloud IMDSv2 e fallback para serviços externos (`api.ipify.org`, `checkip.amazonaws.com`); (2) prompt interativo para informar um hostname personalizado (IP ou domínio registrado); (3) geração de certificado SSL auto-assinado cujo CN e SAN (DNS ou IP, conforme o tipo do hostname) refletem o endereço público real — incluindo lógica de regeneração automática quando o certificado existente não corresponde ao hostname atual; (4) geração de `docker-compose.override.yaml`, mesclado automaticamente pelo Docker Compose, que substitui todas as referências hardcoded a `agentk.local` nas configurações do Keycloak (`KC_HOSTNAME`) e do oauth2-proxy (URLs de OIDC, redirect, whitelist), sem modificar `docker-compose.yaml`; (5) resumo final com URLs públicas reais e orientações sobre regras de firewall e certificado Let's Encrypt para produção. A criação de containers permanece idêntica à do `setup.sh`.
+
+### Motivo / Descrição:
+Atende à necessidade de implantar a stack em ambientes de nuvem pública onde `agentk.local` não é resolvível. A abordagem com `docker-compose.override.yaml` isola as diferenças de ambiente sem duplicar o arquivo de composição principal, garantindo rastreabilidade e manutenibilidade.
+
+### Data e Autor:
+- 2026-05-28 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
+## [2026-05-25] - Geração de relatório de validação do fluxo de vereditos
+
+### Arquivos Modificados:
+- `Agentk-Sugest/RELATORIO_TESTES.md` [NOVO]: Relatório completo de validação gerado pelo script `tests/generate_report.py`. Documenta 44 verificações em 8 cenários (SAFE, RISKY sem autorização, RISKY autorizado, SUSPECT, UNCERTAIN, UNSAFE, erro de rede e JSON inválido), cobrindo: confirmação de envio do prompt ao Gateway, eficácia do bloqueio pela IA local e confirmação de que o ChatGPT é chamado exclusivamente para vereditos SAFE ou RISKY autorizados. Taxa de aprovação: 100% (44/44).
+- `Agentk-Sugest/client/tests/generate_report.py` [NOVO]: Script Python autônomo que instancia o `ChatService` com mocks isolados, executa cada cenário instrumentado, coleta métricas de tempo e flags de session_state, e gera o relatório textual formatado.
+
+### Motivo / Descrição:
+Atende à solicitação de um documento de referência legível que comprove o funcionamento correto do pipeline de segurança: todo prompt passa obrigatoriamente pelo Gateway de IA local antes de qualquer chamada ao ChatGPT; vereditos de risco são bloqueados definitivamente; vereditos RISKY requerem autorização administrativa Keycloak. O relatório é reutilizável como seção de evidências técnicas no README do projeto.
+
+### Data e Autor:
+- 2026-05-25 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
+## [2026-05-25] - Correção do fluxo de roteamento por veredito e suite de testes automatizados
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/services/chat_service.py`: Corrigidos três defeitos no método `process_llm_request`:
+  1. **Veredito RISKY**: o `@st.dialog` era invocado dentro de um contexto aninhado (`st.spinner`), onde o Streamlit não consegue renderizá-lo. A lógica foi alterada para apenas setar `st.session_state['show_risky_dialog'] = True` e retornar `None`, delegando a abertura do diálogo ao nível raiz do script (`main.py`).
+  2. **Vereditos bloqueados (SUSPECT/UNCERTAIN/UNSAFE)**: a mensagem de bloqueio era renderizada diretamente via `st.chat_message` *e* retornada como mock response, causando exibição duplicada no chat. O código agora somente seta `st.session_state['blocked_message']` e retorna `None`.
+  3. **Mensagens de retorno em erros de gateway**: os casos de erro de rede e JSON inválido continuam retornando um mock via `_create_mock_response`, compatível com o contrato esperado pelo chamador.
+- `Agentk-Sugest/client/app/main.py`: Adicionados dois blocos no nível raiz do script para processar os flags gerados pelo serviço:
+  1. Exibição de `blocked_message` via `st.warning` dentro de `st.chat_message("assistant")`.
+  2. Abertura do diálogo Keycloak (`chat_service._show_risky_auth_dialog()`) quando `show_risky_dialog=True`, garantindo execução no contexto correto para `@st.dialog`.
+  3. Adicionado `st.rerun()` quando `response is None` e há flag pendente, assegurando que os blocos acima sejam atingidos no ciclo de renderização adequado.
+- `Agentk-Sugest/client/tests/conftest.py` [NOVO]: Configuração global de fixtures para pytest. Injeta um mock completo do Streamlit em `sys.modules` antes de qualquer importação da aplicação, fornece a classe `FakeSessionState` e a fixture `autouse` `fresh_session_state` que reinicia o estado entre testes.
+- `Agentk-Sugest/client/tests/test_chat_service.py` [NOVO]: Suite com 23 testes automatizados cobrindo todos os fluxos de `process_llm_request`: veredito SAFE (3 casos), RISKY sem e com autorização (5 casos), vereditos bloqueados parametrizados SUSPECT/UNCERTAIN/UNSAFE (4×3 casos) e erros do Gateway (3 casos). Todos os testes passam sem dependência de infraestrutura externa.
+- `Agentk-Sugest/client/pytest.ini` [NOVO]: Configuração do pytest com `testpaths = tests` e `-v --tb=short`.
+
+### Motivo / Descrição:
+Os defeitos identificados impediam o funcionamento correto do diálogo de autorização Keycloak (RISKY) e causavam renderização duplicada de mensagens de bloqueio na interface Streamlit. A suite de testes foi criada para garantir rastreabilidade das correções e prevenir regressões futuras no roteamento por veredito do Gateway.
+
+### Resultado dos Testes:
+```
+23 passed in 1.50s
+```
+
+### Data e Autor:
+- 2026-05-25 — Modificação aplicada por automação assistida (ajuste solicitado pelo mantenedor do repositório).
+
+---
+
+## [2026-05-24] - Ajuste do fluxo de submissão ao LLM baseado no veredito do Gateway
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/services/chat_service.py`: Alterado o fluxo de `process_llm_request` para:
+  - Encaminhar prompts com veredito `SAFE` ao LLM (fluxo normal de completions).
+  - Para `RISKY`: exigir autorização administrativa via Keycloak (exibe diálogo). Apenas após autorização a requisição é encaminhada.
+  - Bloquear vereditos `SUSPECT`, `UNCERTAIN`, `UNSAFE` (e quaisquer outros não-explicitados), retornando mensagem ao usuário e sem encaminhar ao LLM/Streamlit.
+
+### Motivo / Descrição:
+Alinhamento funcional: restaurar o envio automático de prompts classificados como `SAFE` ao provedor LLM, reforçar controle humano sobre ações classificadas como `RISKY` e prevenir vazamento/execução de prompts incertos ou perigosos. Mantém logs de auditoria para cada decisão do Gateway e segue o princípio de fail-fast para prompts não-autorizados.
+
+### Data e Autor:
+- 2026-05-24 — Modificação aplicada por automação assistida (ajuste solicitado pelo mantenedor do repositório).
+
+## [2026-05-10] - Correção de Injeção de Credenciais Google no Keycloak (keycloak-init.sh)
+
+### Arquivos Modificados:
+- `scripts/keycloak-init.sh` [NOVO]: Script de inicialização dedicado que substitui os marcadores `__GOOGLE_CLIENT_ID__` e `__GOOGLE_CLIENT_SECRET__` no `realm-agentk.json` via `sed` antes de importar o realm. Usa `@` como delimitador para evitar conflito com `/` nos valores. Encerra com `exec kc.sh` para garantir que o PID 1 seja o processo Keycloak.
+- `docker-compose.yaml`: Substituído o bloco `command` inline (que causava erros de parsing YAML/shell com `sed` multi-linha) pelo script dedicado `keycloak-init.sh`, montado como volume somente-leitura em `/opt/keycloak-init.sh`.
+
+### Causa Raiz:
+O bloco `command: >` do YAML (folded scalar) colapsa quebras de linha, fazendo o shell interpretar os argumentos `-e` do `sed` como comandos separados em vez de flags. O uso do delimitador `|` também conflitava com o operador de pipe do shell. A solução definitiva é um script externo com controle total de escaping.
+
+
+### Arquivos Modificados:
+- `config/keycloak/realm-agentk.json`: Adicionado o bloco `users` com os 4 usuários pré-autorizados para acesso via Google OIDC: `efraim.alima@gmail.com`, `henriquerg99@gmail.com`, `arthur10batista@gmail.com` e `felipeayom2.f@gmail.com`. Cada usuário possui um `federatedIdentities` vinculado ao provedor `google`, permitindo que o Keycloak faça o match automático por email no primeiro login. O campo `emailVerified: true` garante que não seja exigida verificação adicional de email após o login Google.
+
+### Comportamento esperado:
+O Keycloak já possui os usuários cadastrados. No primeiro login via Google, o fluxo "first broker login" detecta o email correspondente e vincula a conta Google ao usuário local. O `userId` do `federatedIdentities` será atualizado automaticamente pelo Keycloak para o `sub` real do Google após a primeira autenticação.
+
+### Arquivos Modificados:
+- `config/keycloak/realm-agentk.json`: Adicionado o bloco `identityProviders` configurando o Google como provedor OIDC externo. Incluídos dois mappers: `google-email-mapper` (atributo de email) e `google-name-mapper` (nome completo via `oidc-full-name-idp-mapper`). As credenciais são resolvidas dinamicamente via `${env.GOOGLE_CLIENT_ID}` e `${env.GOOGLE_CLIENT_SECRET}` para evitar valores sensíveis em código. Os `redirectUris` e `webOrigins` do cliente `oauth2-proxy` foram restritos à URL de produção `https://agentk.local` (substituindo o wildcard `*`).
+- `docker-compose.yaml`: Adicionadas as variáveis de ambiente `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` ao serviço `keycloak`, interpoladas a partir do `.env` com fallback seguro `CHANGE_ME` para evitar falha silenciosa.
+- `.env`: Adicionado bloco de configuração do Google OIDC com placeholder `CHANGE_ME` e instrução de onde obter as credenciais no Google Cloud Console.
+
+### Causa Raiz / Motivação:
+Permitir autenticação federada com contas Google através do Keycloak, eliminando a necessidade de criação manual de usuários no realm. O Keycloak atua como broker: o usuário clica em "Login com Google", é redirecionado ao OAuth2 da Google, e ao retornar o Keycloak cria ou vincula o usuário local automaticamente.
+
 
 ### Arquivos Modificados:
 - `src/main/java/SecurityClassifier.java`: Restaurada a classificação granular com 5 categorias (`SAFE`, `SUSPECT`, `UNSAFE`, `RISKY`, `UNCERTAIN`). Atualizada a engenharia de prompt para incluir definições estritas de contexto Kubernetes e ajustada a lógica de parsing para garantir o mapeamento correto dos vereditos.
