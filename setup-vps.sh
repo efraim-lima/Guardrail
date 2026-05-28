@@ -279,6 +279,90 @@ except Exception:
     else
         log_warn "Falha ao atualizar validPostLogoutRedirectUris. Verifique manualmente no admin do Keycloak."
     fi
+
+    # Garante que agentk-internal exista (realm pode ter sido importado sem ele)
+    local existing
+    existing=$(docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh get clients -r agentk \
+        --fields id,clientId 2>/dev/null \
+        | python3 -c "
+import sys, json
+try:
+    clients = json.load(sys.stdin)
+    print(next(c['id'] for c in clients if c.get('clientId') == 'agentk-internal'))
+except StopIteration:
+    pass
+" 2>/dev/null || true)
+
+    if [[ -z "$existing" ]]; then
+        log_info "Criando cliente agentk-internal no Keycloak..."
+        docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh create clients -r agentk \
+            -s clientId=agentk-internal \
+            -s 'name=AgentK Internal Validator' \
+            -s enabled=true \
+            -s publicClient=true \
+            -s standardFlowEnabled=false \
+            -s directAccessGrantsEnabled=true \
+            -s protocol=openid-connect 2>/dev/null \
+        && log_ok "Cliente agentk-internal criado." \
+        || log_warn "Falha ao criar agentk-internal."
+    else
+        log_info "Cliente agentk-internal já existe."
+    fi
+
+    # Garante role k8s-admin
+    docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh create roles -r agentk \
+        -s name=k8s-admin \
+        -s 'description=Autoriza prompts RISKY' 2>/dev/null || true
+
+    # Garante usuário k8s-admin com senha atualizada
+    local k8s_pass="${K8S_ADMIN_PASSWORD:-changeme}"
+    local user_id
+    user_id=$(docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh get users -r agentk -q username=k8s-admin \
+        2>/dev/null \
+        | python3 -c "
+import sys, json
+try:
+    users = json.load(sys.stdin)
+    print(users[0]['id']) if users else None
+except Exception:
+    pass
+" 2>/dev/null || true)
+
+    if [[ -z "$user_id" ]]; then
+        log_info "Criando usuário k8s-admin..."
+        docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh create users -r agentk \
+            -s username=k8s-admin \
+            -s email=k8sadmin@agentk.internal \
+            -s enabled=true -s emailVerified=true 2>/dev/null || true
+        user_id=$(docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh get users -r agentk -q username=k8s-admin \
+            2>/dev/null \
+            | python3 -c "
+import sys, json
+try:
+    users = json.load(sys.stdin)
+    print(users[0]['id']) if users else None
+except Exception:
+    pass
+" 2>/dev/null || true)
+    fi
+
+    if [[ -n "$user_id" ]]; then
+        docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh set-password -r agentk \
+            --userid "$user_id" --new-password "$k8s_pass" --temporary=false 2>/dev/null || true
+        docker exec keycloak \
+            /opt/keycloak/bin/kcadm.sh add-roles -r agentk \
+            --uusername k8s-admin --rolename k8s-admin 2>/dev/null || true
+        log_ok "Usuário k8s-admin configurado."
+    else
+        log_warn "Não foi possível criar/localizar usuário k8s-admin."
+    fi
 }
 
 # ---------------------------------------------------------------------------
