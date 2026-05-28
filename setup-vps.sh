@@ -233,52 +233,60 @@ configure_vps_hostname() {
 # e o hostname público mudou para VPS/domínio personalizado.
 # ---------------------------------------------------------------------------
 fix_keycloak_post_logout_uris() {
-    local admin_user admin_pass server_url client_uuid
+    local admin_user admin_pass token client_uuid
     admin_user="${KEYCLOAK_ADMIN:-admin}"
     admin_pass="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
-    server_url="http://localhost:8080/keycloak"
 
-    log_info "Atualizando validPostLogoutRedirectUris do cliente oauth2-proxy no Keycloak..."
+    log_info "Sincronizando cliente oauth2-proxy no Keycloak com hostname: ${VPS_HOSTNAME}..."
 
-    # Autentica no Keycloak via kcadm.sh dentro do container
-    if ! docker exec keycloak \
-        /opt/keycloak/bin/kcadm.sh config credentials \
-        --server "$server_url" \
-        --realm master \
-        --user "$admin_user" \
-        --password "$admin_pass" 2>/dev/null; then
-        log_warn "Não foi possível autenticar no Keycloak via kcadm. Pulando atualização do cliente."
-        log_warn "Execute manualmente: container keycloak precisa estar saudável."
+    # Obtém token admin via REST (mais confiável que kcadm para operações de array)
+    token=$(docker exec keycloak sh -c "
+        curl -s -X POST http://localhost:8080/keycloak/realms/master/protocol/openid-connect/token \
+          -d 'client_id=admin-cli&grant_type=password&username=${admin_user}&password=${admin_pass}' \
+        | python3 -c \"import sys,json; print(json.load(sys.stdin).get('access_token',''))\"
+    " 2>/dev/null || true)
+
+    if [[ -z "$token" ]]; then
+        log_warn "Não foi possível autenticar no Keycloak. Keycloak ainda não está saudável?"
         return 0
     fi
 
-    # Obtém o UUID interno do cliente oauth2-proxy
-    client_uuid=$(docker exec keycloak \
-        /opt/keycloak/bin/kcadm.sh get clients -r agentk \
-        --fields id,clientId 2>/dev/null \
-        | python3 -c "
-import sys, json
-try:
-    clients = json.load(sys.stdin)
-    print(next(c['id'] for c in clients if c.get('clientId') == 'oauth2-proxy'))
-except Exception:
-    pass
-" 2>/dev/null || true)
+    # UUID do cliente oauth2-proxy
+    client_uuid=$(docker exec keycloak sh -c "
+        curl -s http://localhost:8080/keycloak/admin/realms/agentk/clients \
+          -H 'Authorization: Bearer ${token}' \
+        | python3 -c \"
+import sys,json
+cs=json.load(sys.stdin)
+print(next((c['id'] for c in cs if c.get('clientId')=='oauth2-proxy'),''))
+\"
+    " 2>/dev/null || true)
 
     if [[ -z "$client_uuid" ]]; then
-        log_warn "Cliente oauth2-proxy não encontrado no Keycloak. Realm ainda não importado?"
+        log_warn "Cliente oauth2-proxy não encontrado. Realm ainda não importado?"
         return 0
     fi
 
-    # Atualiza o atributo para aceitar qualquer post_logout_redirect_uri
-    if docker exec keycloak \
-        /opt/keycloak/bin/kcadm.sh update "clients/${client_uuid}" \
-        -r agentk \
-        -s 'attributes."post.logout.redirect.uris"=*' 2>/dev/null; then
-        log_ok "validPostLogoutRedirectUris atualizado para '*' (aceita qualquer domínio)."
-    else
-        log_warn "Falha ao atualizar validPostLogoutRedirectUris. Verifique manualmente no admin do Keycloak."
-    fi
+    # Atualiza redirectUris, webOrigins e post.logout.redirect.uris com o hostname real
+    docker exec keycloak sh -c "
+        curl -s -X PUT http://localhost:8080/keycloak/admin/realms/agentk/clients/${client_uuid} \
+          -H 'Authorization: Bearer ${token}' \
+          -H 'Content-Type: application/json' \
+          -d '{
+            \"redirectUris\": [
+              \"https://${VPS_HOSTNAME}/oauth2/callback\",
+              \"https://agentk.local/oauth2/callback\"
+            ],
+            \"webOrigins\": [
+              \"https://${VPS_HOSTNAME}\",
+              \"https://agentk.local\"
+            ],
+            \"attributes\": {
+              \"post.logout.redirect.uris\": \"*\"
+            }
+          }'
+    " 2>/dev/null && log_ok "Cliente oauth2-proxy atualizado (redirectUri, webOrigin, post_logout)." \
+                  || log_warn "Falha ao atualizar oauth2-proxy."
 
     # Garante que agentk-internal exista (realm pode ter sido importado sem ele)
     local existing
