@@ -48,7 +48,7 @@ require_tools() {
         missing=1
     fi
 
-    [[ "$missing" -eq 1 ]] && exit 1
+    if [[ "$missing" -eq 1 ]]; then exit 1; fi
 }
 
 # ---------------------------------------------------------------------------
