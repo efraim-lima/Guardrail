@@ -355,16 +355,35 @@ except Exception:
     fi
 
     if [[ -n "$user_id" ]]; then
-        # Remove required actions antes de definir a senha — sem isso o Direct Access Grant
-        # falha com "Account is not fully set up" mesmo com senha correta.
-        docker exec keycloak \
-            /opt/keycloak/bin/kcadm.sh update "users/${user_id}" -r agentk \
-            -s 'requiredActions=[]' \
-            -s enabled=true \
-            -s emailVerified=true 2>/dev/null || true
-        docker exec keycloak \
-            /opt/keycloak/bin/kcadm.sh set-password -r agentk \
-            --userid "$user_id" --new-password "$k8s_pass" --temporary=false 2>/dev/null || true
+        local k8s_admin_token
+        # Usa REST API com JSON real — kcadm não serializa arrays vazios corretamente.
+        # Sem isso, requiredActions persiste e o Direct Access Grant falha com
+        # "Account is not fully set up" mesmo com senha correta.
+        k8s_admin_token=$(docker exec keycloak sh -c "
+          curl -s -X POST http://localhost:8080/keycloak/realms/master/protocol/openid-connect/token \\
+            -d \"client_id=admin-cli&grant_type=password&username=${KEYCLOAK_ADMIN:-admin}&password=${KEYCLOAK_ADMIN_PASSWORD:-admin}\" \\
+          | python3 -c \"import sys,json; print(json.load(sys.stdin).get('access_token',''))\"
+        " 2>/dev/null || true)
+
+        if [[ -n "$k8s_admin_token" ]]; then
+            # Limpa required actions via PUT com JSON real
+            docker exec keycloak sh -c "
+              curl -s -X PUT http://localhost:8080/keycloak/admin/realms/agentk/users/${user_id} \\
+                -H 'Authorization: Bearer ${k8s_admin_token}' \\
+                -H 'Content-Type: application/json' \\
+                -d '{\"requiredActions\":[],\"enabled\":true,\"emailVerified\":true}'
+            " 2>/dev/null || true
+            # Define senha permanente via REST API
+            docker exec keycloak sh -c "
+              curl -s -X PUT http://localhost:8080/keycloak/admin/realms/agentk/users/${user_id}/reset-password \\
+                -H 'Authorization: Bearer ${k8s_admin_token}' \\
+                -H 'Content-Type: application/json' \\
+                -d '{\"type\":\"password\",\"value\":\"${k8s_pass}\",\"temporary\":false}'
+            " 2>/dev/null || true
+        else
+            log_warn "Não foi possível obter token admin para limpar requiredActions via REST API."
+        fi
+
         docker exec keycloak \
             /opt/keycloak/bin/kcadm.sh add-roles -r agentk \
             --uusername k8s-admin --rolename k8s-admin 2>/dev/null || true

@@ -56,6 +56,14 @@
       }
     ]
   },
+  "requiredActions": [
+    {"alias": "CONFIGURE_TOTP",         "providerId": "CONFIGURE_TOTP",         "enabled": true,  "defaultAction": false, "priority": 10, "config": {}},
+    {"alias": "UPDATE_PASSWORD",         "providerId": "UPDATE_PASSWORD",         "enabled": true,  "defaultAction": false, "priority": 30, "config": {}},
+    {"alias": "UPDATE_PROFILE",          "providerId": "UPDATE_PROFILE",          "enabled": true,  "defaultAction": false, "priority": 40, "config": {}},
+    {"alias": "VERIFY_EMAIL",            "providerId": "VERIFY_EMAIL",            "enabled": true,  "defaultAction": false, "priority": 50, "config": {}},
+    {"alias": "delete_account",          "providerId": "delete_account",          "enabled": false, "defaultAction": false, "priority": 60, "config": {}},
+    {"alias": "TERMS_AND_CONDITIONS",    "providerId": "TERMS_AND_CONDITIONS",    "enabled": false, "defaultAction": false, "priority": 20, "config": {}}
+  ],
   "users": [
     {
       "username": "k8s-admin",
