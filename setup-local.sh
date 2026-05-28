@@ -308,6 +308,43 @@ CFG
     log_ok "Certificado SSL gerado."
 }
 
+# ---------------------------------------------------------------------------
+# Gera gateway-keystore.p12 via openssl (sem necessidade de Java/keytool)
+# ---------------------------------------------------------------------------
+ensure_gateway_keystore() {
+    local keystore="./gateway-keystore.p12"
+    local ks_pass="${KEYSTORE_PASSWORD:-gateway-secret}"
+
+    if [[ -f "$keystore" ]]; then
+        log_info "gateway-keystore.p12 ja existe."
+        return 0
+    fi
+
+    log_info "Gerando gateway-keystore.p12..."
+
+    local tmp_key tmp_crt
+    tmp_key="$(mktemp)"
+    tmp_crt="$(mktemp)"
+
+    openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+        -keyout "$tmp_key" \
+        -out    "$tmp_crt" \
+        -subj "/CN=gateway/OU=dev/O=agentk/L=local/ST=local/C=BR" \
+        >/dev/null 2>&1
+
+    openssl pkcs12 -export \
+        -inkey "$tmp_key" \
+        -in    "$tmp_crt" \
+        -name  gateway \
+        -out   "$keystore" \
+        -passout "pass:${ks_pass}" \
+        >/dev/null 2>&1
+
+    rm -f "$tmp_key" "$tmp_crt"
+    upsert_env "KEYSTORE_PASSWORD" "$ks_pass"
+    log_ok "gateway-keystore.p12 gerado."
+}
+
 ensure_logs_dir() {
     mkdir -p "./Agentk-Sugest/logs"
     chmod 777 "./Agentk-Sugest/logs" || true
@@ -358,6 +395,7 @@ main() {
     load_env
     ensure_ssl_certificate
     generate_compose_override
+    ensure_gateway_keystore
     ensure_logs_dir
     start_stack
     print_summary
