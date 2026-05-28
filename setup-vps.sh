@@ -145,40 +145,62 @@ is_ip_address() {
     [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+# Remove https:// ou http:// caso o usuário cole a URL completa
+strip_scheme() {
+    echo "$1" | sed -E 's|^https?://||' | sed 's|/.*||'
+}
+
 configure_vps_hostname() {
     local detected_ip
     detected_ip="$(resolve_public_ip)"
 
-    local current_hostname="${VPS_HOSTNAME:-${detected_ip}}"
-
     echo ""
-    echo -e "${BOLD}Hostname público da VPS${NC}"
-    echo -e "Use o IP público da instância ou um domínio registrado (ex: meuservidor.com)."
-    echo -e "Pressione ENTER para aceitar o valor detectado/atual."
+    echo -e "${BOLD}Configuração de hostname da VPS${NC}"
     echo ""
 
     if [[ -n "$detected_ip" ]]; then
         log_info "IP público detectado: ${detected_ip}"
     else
         log_warn "Não foi possível detectar o IP público automaticamente."
-        current_hostname="${VPS_HOSTNAME:-}"
     fi
 
-    local input_hostname
-    read -r -p "Hostname [${current_hostname:-<obrigatório>}]: " input_hostname || true
+    # --- Domínio customizado (DuckDNS, Cloudflare, etc.) ---
+    local current_domain
+    current_domain="$(strip_scheme "${CUSTOM_DOMAIN:-}")"
 
-    if [[ -n "${input_hostname:-}" ]]; then
-        current_hostname="$input_hostname"
-    fi
+    echo ""
+    echo -e "  Domínio personalizado (DuckDNS, Cloudflare, etc.)"
+    echo -e "  Exemplo: agentk-guardrail.duckdns.org"
+    echo -e "  Deixe em branco para usar somente o IP."
+    local input_domain
+    read -r -p "Domínio [${current_domain:-nenhum}]: " input_domain || true
+    [[ -n "${input_domain:-}" ]] && current_domain="$(strip_scheme "$input_domain")"
 
-    if [[ -z "${current_hostname:-}" ]]; then
-        log_error "Hostname não informado. Abortando."
+    # --- IP público ---
+    local current_ip
+    current_ip="${VPS_HOST_IP:-${detected_ip}}"
+    local input_ip
+    read -r -p "IP público [${current_ip:-<obrigatório se sem domínio>}]: " input_ip || true
+    [[ -n "${input_ip:-}" ]] && current_ip="$input_ip"
+
+    # Domínio tem precedência; IP é fallback e também fica salvo como VPS_HOST_IP
+    if [[ -n "${current_domain:-}" ]]; then
+        VPS_HOSTNAME="$current_domain"
+        VPS_HOST_IP="${current_ip:-}"
+    elif [[ -n "${current_ip:-}" ]]; then
+        VPS_HOSTNAME="$current_ip"
+        VPS_HOST_IP="$current_ip"
+    else
+        log_error "Informe ao menos o IP público ou um domínio. Abortando."
         exit 1
     fi
 
-    VPS_HOSTNAME="$current_hostname"
-    upsert_env "VPS_HOSTNAME" "$VPS_HOSTNAME"
-    log_ok "Hostname configurado: ${VPS_HOSTNAME}"
+    upsert_env "VPS_HOSTNAME"  "$VPS_HOSTNAME"
+    upsert_env "CUSTOM_DOMAIN" "${current_domain:-}"
+    upsert_env "VPS_HOST_IP"   "${VPS_HOST_IP:-}"
+    log_ok "Hostname principal: ${VPS_HOSTNAME}"
+    [[ -n "${current_domain:-}" && -n "${VPS_HOST_IP:-}" ]] && \
+        log_info "IP associado ao domínio: ${VPS_HOST_IP}"
 }
 
 # ---------------------------------------------------------------------------
@@ -217,14 +239,21 @@ ensure_ssl_certificate() {
     local san_cfg
     san_cfg="$(mktemp)"
 
-    # Monta a seção alt_names corretamente: IP ou DNS conforme o valor do hostname
+    # Monta alt_names cobrindo: domínio + IP (quando ambos disponíveis)
     local alt_names_block
     if is_ip_address "$VPS_HOSTNAME"; then
+        # Modo IP-only
         alt_names_block="IP.1  = ${VPS_HOSTNAME}
 IP.2  = 127.0.0.1"
     else
+        # Modo domínio — inclui também o IP associado no SAN, se disponível
         alt_names_block="DNS.1 = ${VPS_HOSTNAME}
 DNS.2 = localhost"
+        if [[ -n "${VPS_HOST_IP:-}" ]] && ! is_ip_address "$VPS_HOSTNAME"; then
+            alt_names_block+="
+IP.1  = ${VPS_HOST_IP}
+IP.2  = 127.0.0.1"
+        fi
     fi
 
     cat > "$san_cfg" <<CFG
@@ -359,8 +388,7 @@ start_stack() {
 # Resumo final
 # ---------------------------------------------------------------------------
 print_summary() {
-    local proto="https"
-    local base_url="${proto}://${VPS_HOSTNAME}"
+    local base_url="https://${VPS_HOSTNAME}"
 
     echo ""
     echo -e "${GREEN}+-------------------------------------------------------------+${NC}"
@@ -369,6 +397,11 @@ print_summary() {
     echo ""
     echo -e "Aplicação:      ${BOLD}${base_url}/${NC}"
     echo -e "Keycloak Admin: ${BOLD}${base_url}/keycloak/admin/${NC}"
+    if [[ -n "${CUSTOM_DOMAIN:-}" && -n "${VPS_HOST_IP:-}" ]]; then
+        echo ""
+        echo -e "Acesso direto por IP também disponível:"
+        echo -e "  https://${VPS_HOST_IP}/  (certificado válido apenas para ${CUSTOM_DOMAIN})"
+    fi
     echo ""
     echo -e "${YELLOW}ATENÇÃO — Certificado auto-assinado:${NC}"
     echo -e "  O navegador exibirá aviso de segurança. Para produção, configure"

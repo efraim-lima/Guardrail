@@ -21,11 +21,12 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERRO]${NC} $1"; }
 
 ENV_FILE=".env"
+COMPOSE_OVERRIDE_FILE="docker-compose.override.yaml"
 CERTS_DIR="./nginx/certs"
 CERT_FILE="${CERTS_DIR}/agentk.crt"
 KEY_FILE="${CERTS_DIR}/agentk.key"
 CERT_DAYS=365
-CERT_CN="agentk.local"
+DEFAULT_CERT_CN="agentk.local"
 DEFAULT_CLIENT_SECRET="oauth2-proxy-secret"
 
 require_tools() {
@@ -85,6 +86,14 @@ load_env() {
     set +a
 }
 
+is_ip_address_local() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+strip_scheme_local() {
+    echo "$1" | sed -E 's|^https?://||' | sed 's|/.*||'
+}
+
 configure_keycloak_credentials() {
     local current_user="${KEYCLOAK_ADMIN:-admin}"
     local current_pass="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
@@ -115,6 +124,32 @@ configure_keycloak_credentials() {
     log_ok "Credenciais do Keycloak atualizadas no .env"
 }
 
+# ---------------------------------------------------------------------------
+# Domínio customizado (opcional) — permite acessar via DuckDNS etc. mesmo local
+# ---------------------------------------------------------------------------
+configure_custom_domain() {
+    local current_domain
+    current_domain="$(strip_scheme_local "${CUSTOM_DOMAIN:-}")"
+
+    echo ""
+    echo -e "${BOLD}Domínio personalizado (opcional)${NC}"
+    echo -e "  Se tiver um domínio apontando para este host (DuckDNS, Cloudflare, etc.),"
+    echo -e "  informe aqui. Deixe em branco para usar somente agentk.local."
+    echo -e "  Exemplo: agentk-guardrail.duckdns.org"
+    local input_domain
+    read -r -p "Domínio [${current_domain:-nenhum}]: " input_domain || true
+    [[ -n "${input_domain:-}" ]] && current_domain="$(strip_scheme_local "$input_domain")"
+
+    CUSTOM_DOMAIN="${current_domain:-}"
+    upsert_env "CUSTOM_DOMAIN" "$CUSTOM_DOMAIN"
+
+    if [[ -n "$CUSTOM_DOMAIN" ]]; then
+        log_ok "Domínio configurado: ${CUSTOM_DOMAIN}"
+    else
+        log_info "Nenhum domínio configurado. Usando agentk.local."
+    fi
+}
+
 ensure_runtime_env() {
     local detected_ip
     detected_ip="$(resolve_host_ip)"
@@ -129,18 +164,120 @@ ensure_runtime_env() {
     log_ok "IP detectado: ${detected_ip}"
 }
 
+# ---------------------------------------------------------------------------
+# Gera docker-compose.override.yaml quando um domínio customizado está definido
+# ---------------------------------------------------------------------------
+generate_compose_override() {
+    if [[ -z "${CUSTOM_DOMAIN:-}" ]]; then
+        # Sem domínio: remove override anterior se existir para não conflitar
+        if [[ -f "$COMPOSE_OVERRIDE_FILE" ]]; then
+            rm -f "$COMPOSE_OVERRIDE_FILE"
+            log_info "Override anterior removido (sem domínio customizado)."
+        fi
+        return 0
+    fi
+
+    log_info "Gerando ${COMPOSE_OVERRIDE_FILE} para domínio ${CUSTOM_DOMAIN}..."
+
+    local trusted_ip1="${OAUTH2_PROXY_TRUSTED_PROXY_IP_1:-172.16.0.0/12}"
+    local trusted_ip2="${OAUTH2_PROXY_TRUSTED_PROXY_IP_2:-10.0.0.0/8}"
+    local trusted_ip3="${OAUTH2_PROXY_TRUSTED_PROXY_IP_3:-192.168.0.0/16}"
+    local client_id="${OAUTH2_PROXY_CLIENT_ID:-oauth2-proxy}"
+    local client_secret="${OAUTH2_PROXY_CLIENT_SECRET:-oauth2-proxy-secret}"
+    local cookie_secret="${OAUTH2_PROXY_COOKIE_SECRET:-agentktccsecretkey1234567890abcd}"
+
+    cat > "$COMPOSE_OVERRIDE_FILE" <<OVERRIDE
+# =============================================================================
+# docker-compose.override.yaml — gerado automaticamente por setup-local.sh
+# Substitui referências ao hostname agentk.local pelo domínio customizado.
+# NÃO edite manualmente; execute setup-local.sh novamente para regenerar.
+# Domínio configurado: ${CUSTOM_DOMAIN}
+# Gerado em: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+# =============================================================================
+
+services:
+
+  keycloak:
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=\${KEYCLOAK_ADMIN:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=\${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_DB=dev-file
+      - KC_HOSTNAME=${CUSTOM_DOMAIN}
+      - KC_HOSTNAME_STRICT=false
+      - KC_HTTP_RELATIVE_PATH=/keycloak
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HTTP_ENABLED=true
+      - KC_HEALTH_ENABLED=true
+      - KC_IMPORT=/tmp/realm-agentk.json
+      - GOOGLE_CLIENT_ID=\${GOOGLE_CLIENT_ID:-CHANGE_ME}
+      - GOOGLE_CLIENT_SECRET=\${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
+
+  oauth2-proxy:
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://agentk-client:8501
+      - --provider=oidc
+      - --client-id=${client_id}
+      - --client-secret=${client_secret}
+      - --oidc-issuer-url=https://${CUSTOM_DOMAIN}/keycloak/realms/agentk
+      - --skip-oidc-discovery=true
+      - --login-url=https://${CUSTOM_DOMAIN}/keycloak/realms/agentk/protocol/openid-connect/auth
+      - --redeem-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/token
+      - --oidc-jwks-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/certs
+      - --redirect-url=https://${CUSTOM_DOMAIN}/oauth2/callback
+      - --reverse-proxy=true
+      - --trusted-proxy-ip=${trusted_ip1}
+      - --trusted-proxy-ip=${trusted_ip2}
+      - --trusted-proxy-ip=${trusted_ip3}
+      - --cookie-secret=${cookie_secret}
+      - --cookie-secure=true
+      - --cookie-samesite=lax
+      - --session-cookie-minimal=true
+      - --insecure-oidc-allow-unverified-email=true
+      - --skip-auth-route=GET=^/favicon\.ico\$
+      - --email-domain=*
+      - --skip-provider-button=true
+      - --oidc-extra-audience=${client_id}
+      - --whitelist-domain=${CUSTOM_DOMAIN}
+      - --backend-logout-url=http://keycloak:8080/keycloak/realms/agentk/protocol/openid-connect/logout
+OVERRIDE
+
+    log_ok "${COMPOSE_OVERRIDE_FILE} gerado para ${CUSTOM_DOMAIN}."
+}
+
 ensure_ssl_certificate() {
     mkdir -p "$CERTS_DIR"
 
+    # CN: domínio customizado tem precedência sobre agentk.local
+    local CERT_CN="${CUSTOM_DOMAIN:-${DEFAULT_CERT_CN}}"
+
     if [[ -f "$CERT_FILE" && -f "$KEY_FILE" ]]; then
-        log_info "Certificado SSL ja existe."
-        return 0
+        local existing_cn
+        existing_cn="$(openssl x509 -noout -subject -in "$CERT_FILE" 2>/dev/null | sed 's/.*CN\s*=\s*//' | tr -d ' ')"
+        if [[ "$existing_cn" == "$CERT_CN" ]]; then
+            log_info "Certificado SSL ja existe para ${CERT_CN}."
+            return 0
+        else
+            log_warn "Certificado existente (CN=${existing_cn}) difere de ${CERT_CN}. Regenerando..."
+            rm -f "$CERT_FILE" "$KEY_FILE"
+        fi
     fi
 
     log_info "Gerando certificado SSL para ${CERT_CN}..."
 
     local san_cfg
     san_cfg="$(mktemp)"
+
+    # SAN: inclui domínio (se configurado), agentk.local, IP local e loopback
+    local san_entries=""
+    local dns_idx=1 ip_idx=1
+    if [[ -n "${CUSTOM_DOMAIN:-}" ]]; then
+        san_entries+="DNS.${dns_idx} = ${CUSTOM_DOMAIN}\n"; (( dns_idx++ )) || true
+    fi
+    san_entries+="DNS.${dns_idx} = ${DEFAULT_CERT_CN}\n"; (( dns_idx++ )) || true
+    san_entries+="DNS.${dns_idx} = localhost\n"
+    san_entries+="IP.${ip_idx}  = ${AGENTK_HOST_IP}\n"; (( ip_idx++ )) || true
+    san_entries+="IP.${ip_idx}  = 127.0.0.1"
 
     cat > "$san_cfg" <<CFG
 [req]
@@ -158,10 +295,7 @@ keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 
 [alt_names]
-DNS.1 = ${CERT_CN}
-DNS.2 = localhost
-IP.1  = ${AGENTK_HOST_IP}
-IP.2  = 127.0.0.1
+$(echo -e "$san_entries")
 CFG
 
     openssl req -x509 -nodes -days "$CERT_DAYS" -newkey rsa:2048 \
@@ -186,16 +320,23 @@ start_stack() {
 }
 
 print_summary() {
+    local primary_host="${CUSTOM_DOMAIN:-agentk.local}"
     echo ""
     echo -e "${GREEN}+-------------------------------------------------------------+${NC}"
     echo -e "${GREEN}|                    STACK AGENTK PRONTA                      |${NC}"
     echo -e "${GREEN}+-------------------------------------------------------------+${NC}"
     echo ""
-    echo -e "Aplicacao:      ${BOLD}https://agentk.local/${NC}"
-    echo -e "Keycloak Admin: ${BOLD}https://agentk.local/keycloak/admin/${NC}"
+    echo -e "Aplicacao:      ${BOLD}https://${primary_host}/${NC}"
+    echo -e "Keycloak Admin: ${BOLD}https://${primary_host}/keycloak/admin/${NC}"
     echo ""
-    echo -e "Se agentk.local nao resolver no seu PC, adicione no /etc/hosts:"
-    echo -e "${BOLD}${AGENTK_HOST_IP} agentk.local${NC}"
+    if [[ -z "${CUSTOM_DOMAIN:-}" ]]; then
+        echo -e "Se agentk.local nao resolver no seu PC, adicione no /etc/hosts:"
+        echo -e "${BOLD}${AGENTK_HOST_IP} agentk.local${NC}"
+    else
+        echo -e "Acesso alternativo por agentk.local (requer /etc/hosts):"
+        echo -e "  ${BOLD}${AGENTK_HOST_IP} agentk.local${NC}"
+        echo -e "  Arquivo de override gerado: ${BOLD}${COMPOSE_OVERRIDE_FILE}${NC}"
+    fi
     echo ""
     echo -e "Credenciais admin Keycloak:"
     echo -e "Usuario: ${BOLD}${KEYCLOAK_ADMIN:-admin}${NC}"
@@ -211,9 +352,12 @@ main() {
     load_env
     configure_keycloak_credentials
     load_env
+    configure_custom_domain
+    load_env
     ensure_runtime_env
     load_env
     ensure_ssl_certificate
+    generate_compose_override
     ensure_logs_dir
     start_stack
     print_summary
