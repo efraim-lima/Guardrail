@@ -36,14 +36,27 @@ services:
       - KEYSTORE_PATH=/app/gateway-keystore.p12
       - KEYSTORE_PASSWORD=gateway-secret
       - GATEWAY_MITM_PORT=8443
-      - REFERENCE_PROMPTS_PATH=/app/PROMPTS.md
+      - OLLAMA_WORKERS=8
+      - OLLAMA_MAX_QUEUE=500
+      - EMBEDDINGS_CACHE_PATH=/app/output/BASE.embeddings.json
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro
       - ./inspection-terms.xml:/app/inspection-terms.xml:ro
       - ./monitored-sites.xml:/app/monitored-sites.xml:ro
-      - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
       - ./PROMPTS.md:/app/PROMPTS.md:ro
+      - ./src/main/java/BASE.jsonl:/app/BASE.jsonl:ro
+      - ./output:/app/output:rw
+      - ./gateway-keystore.p12:/app/gateway-keystore.p12:ro
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
     logging:
       driver: json-file
@@ -51,11 +64,11 @@ services:
         max-size: "50m"
         max-file: "5"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep java > /dev/null"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
-      start_period: 20s
+      test: [ "CMD-SHELL", "pgrep java > /dev/null" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # Servidor MCP AgentK
@@ -81,11 +94,15 @@ services:
       - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()"]
-      interval: 10s
+      test: [ "CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',3333)); s.close()" ]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 10s
     restart: unless-stopped
 
@@ -113,6 +130,10 @@ services:
       - agentk-logs:/var/log/agentk
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     depends_on:
       agentk-server:
         condition: service_healthy
@@ -126,20 +147,30 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
     container_name: keycloak
+    user: root
     security_opt:
       - apparmor:unconfined
-    # --http-relative-path: essencial para rodar sob /keycloak/ no nginx
-    command: start-dev --import-realm --http-relative-path=/keycloak
+    # start-dev: executa o Keycloak em modo desenvolvimento com auto-rebuild.
+    entrypoint: ["/bin/sh", "/opt/keycloak-init.sh"]
+    command: []
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
+      # KC_HOSTNAME define o hostname público do Keycloak, usado para construir URLs de
+      # callback enviadas a provedores externos (Google OAuth2). Sem isso, o Keycloak
+      # usa o hostname interno do container, causando redirect_uri mismatch.
+      - KC_HOSTNAME=agentk.local
+      - KC_HOSTNAME_STRICT=false
       - KC_HTTP_RELATIVE_PATH=/keycloak
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
       - KC_HEALTH_ENABLED=true
-      # Hostname definido dinamicamente via X-Forwarded-* do Nginx.
-      # Evita WARNs do provider v2 em modo start-dev sobre opções runtime no build-time.
+      - KC_IMPORT=/tmp/realm-agentk.json
+      # Credenciais do provedor de identidade Google (OpenID Connect).
+      # Substitua pelos valores reais obtidos no Google Cloud Console.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-CHANGE_ME}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/
@@ -147,14 +178,20 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:8082:8080"
     volumes:
       - keycloak-data:/opt/keycloak/data
-      # Realm importado automaticamente no primeiro boot via --import-realm.
-      # Se o realm já existir no volume, o Keycloak ignora silenciosamente.
-      - ./config/keycloak:/opt/keycloak/data/import:ro
+      # Realm montado em local neutro para evitar NPE no escaneamento do Keycloak 26.
+      - ./config/keycloak/realm-agentk.json:/tmp/realm-agentk.json:ro
+      # Script de inicialização que injeta as credenciais do Google antes de importar o realm.
+      - ./scripts/keycloak-init.sh:/opt/keycloak-init.sh:ro
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080' || exit 1"]
-      interval: 15s
+      # Procura pela porta 8080 (1F90 hex) em qualquer interface (IPv4 ou IPv6).
+      test: [ "CMD-SHELL", "grep -i ':1F90' /proc/net/tcp* || exit 1" ]
+      interval: 20s
       timeout: 10s
       retries: 10
       start_period: 60s
@@ -250,6 +287,23 @@ services:
     entrypoint: [ "sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:1.5b && wait" ]
     networks:
       - agentk-network
+    environment:
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=-1
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 4G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ---------------------------------------------------------------------------
   # Nginx - Reverse Proxy HTTPS para AgentK Client
@@ -267,6 +321,10 @@ services:
       - "${HOST_BIND_IP:-0.0.0.0}:443:443"
     networks:
       - agentk-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     depends_on:
       # nginx inicia independentemente do oauth2-proxy.
       # Quando oauth2-proxy nao esta ativo, nginx retorna a pagina de erro customizada
@@ -286,9 +344,9 @@ networks:
   #   external: true
   #   name: minikube
 
-# =============================================================================
-# Volumes
-# =============================================================================
+  # =============================================================================
+  # Volumes
+  # =============================================================================
 volumes:
   keycloak-data:
     driver: local

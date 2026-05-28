@@ -77,6 +77,14 @@
 -keep class java.util.concurrent.Semaphore { *; }
 
 # --------------------------------------------------------------------------
+# Manter Gson e modelos JSON
+# --------------------------------------------------------------------------
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class SecurityClassifier$** { *; }
+
+# --------------------------------------------------------------------------
 # Suprimir warnings de APIs internas do JDK usadas pelas dependências
 # --------------------------------------------------------------------------
 -dontwarn com.sun.**

@@ -23,4 +23,12 @@ public class AuditLogger {
         
         System.out.println(message);
     }
+
+    /**
+     * Log específico para o fluxo secundário de testes estatísticos.
+     */
+    public static void logTestVerdict(String prompt, String verdict, String sourceIp) {
+        log("test-agent", "SECONDARY_FLOW_VERDICT", "statistical-analysis", verdict, sourceIp, 
+            "prompt_snippet=" + (prompt.length() > 50 ? prompt.substring(0, 50) : prompt));
+    }
 }
