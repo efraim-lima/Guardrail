@@ -8,6 +8,29 @@
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "authenticationFlows": [
+    {
+      "alias": "first broker login - auto link",
+      "description": "Auto-linka conta existente por email sem pedir senha",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "idp-create-user-if-unique",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "idp-auto-link",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
   "identityProviders": [
     {
       "alias": "google",
@@ -17,7 +40,7 @@
       "trustEmail": true,
       "storeToken": false,
       "addReadTokenRoleOnCreate": false,
-      "firstBrokerLoginFlowAlias": "first broker login",
+      "firstBrokerLoginFlowAlias": "first broker login - auto link",
       "config": {
         "clientId": "__GOOGLE_CLIENT_ID__",
         "clientSecret": "__GOOGLE_CLIENT_SECRET__",
