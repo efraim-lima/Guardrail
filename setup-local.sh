@@ -144,8 +144,10 @@ configure_custom_domain() {
     upsert_env "CUSTOM_DOMAIN" "$CUSTOM_DOMAIN"
 
     if [[ -n "$CUSTOM_DOMAIN" ]]; then
+        upsert_env "APP_PUBLIC_URL" "https://${CUSTOM_DOMAIN}"
         log_ok "Domínio configurado: ${CUSTOM_DOMAIN}"
     else
+        upsert_env "APP_PUBLIC_URL" "https://agentk.local"
         log_info "Nenhum domínio configurado. Usando agentk.local."
     fi
 }

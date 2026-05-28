@@ -1,5 +1,23 @@
 # Registro de Alterações (Changelog)
 
+## [2026-06-01] - Correção do botão de logout: URL dinâmica e movimentação para sidebar
+
+### Arquivos Modificados:
+- `Agentk-Sugest/client/app/main.py` [EDITADO]: Substituídas as URLs de logout hardcoded (`https://agentk.local/...`) por construção dinâmica a partir das variáveis de ambiente `APP_PUBLIC_URL` e `KEYCLOAK_PUBLIC_URL`, com fallback para `https://agentk.local`. Removido o bloco `st.markdown()` que renderizava o botão de logout flutuante diretamente em `main.py`. A URL de logout montada (`layout_url`) é agora passada como parâmetro ao instanciar `Sidebar`.
+- `Agentk-Sugest/client/app/ui/components/sidebar.py` [EDITADO]: Adicionado parâmetro `logout_url` ao construtor de `Sidebar`. No método `render()`, o botão de logout é renderizado no topo da sidebar, antes do logo, utilizando a classe CSS `sidebar-logout-button` — eliminando a colisão com os controles nativos do Streamlit (ícone de engrenagem/menu).
+- `Agentk-Sugest/client/app/ui/styles/main.css` [EDITADO]: Estilo `.logout-button` com `position: fixed; top: 15px; right: 15px; z-index: 999999` substituído por `.sidebar-logout-button`, que exibe o botão como elemento de bloco de largura completa dentro da sidebar, sem posicionamento fixo sobre a interface.
+- `docker-compose.yaml` [EDITADO]: Adicionada variável de ambiente `APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://agentk.local}` ao serviço `agentk-client`, permitindo que o container Streamlit leia o hostname público da aplicação sem depender de valores hardcoded.
+- `setup-vps.sh` [EDITADO]: Adicionada instrução `upsert_env "APP_PUBLIC_URL" "https://${VPS_HOSTNAME}"` após a configuração do hostname, garantindo que a variável seja escrita no `.env` em implantações VPS.
+- `setup-local.sh` [EDITADO]: Adicionada instrução `upsert_env "APP_PUBLIC_URL"` nos dois ramos da função `configure_custom_domain()`: `https://${CUSTOM_DOMAIN}` quando um domínio é informado, ou `https://agentk.local` caso contrário.
+
+### Motivo / Descrição:
+O botão de logout possuía dois problemas: (1) as URLs de logout do Keycloak e do oauth2-proxy estavam hardcoded para `agentk.local`, fazendo o logout falhar em qualquer outro ambiente (VPS, domínio personalizado); (2) o posicionamento `position: fixed; top: 15px; right: 15px` sobrepunha os controles nativos do Streamlit (ícone ⚙️/menu). A correção centraliza a configuração da URL pública em variável de ambiente propagada pelos scripts de setup, e move o botão para dentro da sidebar onde não há conflito visual.
+
+### Data e Autor:
+- 2026-06-01 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-28] - Criação do script de setup para instâncias VPS na nuvem
 
 ### Arquivos Modificados:

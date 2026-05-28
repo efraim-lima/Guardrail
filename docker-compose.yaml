@@ -126,6 +126,7 @@ services:
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://agentk-server:3333/sse}
       - GATEWAY_VALIDATE_URL=${GATEWAY_VALIDATE_URL:-https://agentk-gateway:8080/validar}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://agentk.local}
     volumes:
       - agentk-logs:/var/log/agentk
     networks:

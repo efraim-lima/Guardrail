@@ -131,7 +131,7 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "post.logout.redirect.uris": "https://agentk.local/*"
+        "post.logout.redirect.uris": "*"
       }
     }
   ]

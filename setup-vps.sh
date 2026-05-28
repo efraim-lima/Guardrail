@@ -198,9 +198,65 @@ configure_vps_hostname() {
     upsert_env "VPS_HOSTNAME"  "$VPS_HOSTNAME"
     upsert_env "CUSTOM_DOMAIN" "${current_domain:-}"
     upsert_env "VPS_HOST_IP"   "${VPS_HOST_IP:-}"
+    upsert_env "APP_PUBLIC_URL" "https://${VPS_HOSTNAME}"
     log_ok "Hostname principal: ${VPS_HOSTNAME}"
     [[ -n "${current_domain:-}" && -n "${VPS_HOST_IP:-}" ]] && \
         log_info "IP associado ao domínio: ${VPS_HOST_IP}"
+}
+
+# ---------------------------------------------------------------------------
+# Corrige validPostLogoutRedirectUris do cliente oauth2-proxy no Keycloak
+# em execução via kcadm.sh (Admin CLI embutido na imagem do Keycloak).
+# Necessário quando o realm já foi importado com URIs antigas (agentk.local)
+# e o hostname público mudou para VPS/domínio personalizado.
+# ---------------------------------------------------------------------------
+fix_keycloak_post_logout_uris() {
+    local admin_user admin_pass server_url client_uuid
+    admin_user="${KEYCLOAK_ADMIN:-admin}"
+    admin_pass="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+    server_url="http://localhost:8080/keycloak"
+
+    log_info "Atualizando validPostLogoutRedirectUris do cliente oauth2-proxy no Keycloak..."
+
+    # Autentica no Keycloak via kcadm.sh dentro do container
+    if ! docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh config credentials \
+        --server "$server_url" \
+        --realm master \
+        --user "$admin_user" \
+        --password "$admin_pass" 2>/dev/null; then
+        log_warn "Não foi possível autenticar no Keycloak via kcadm. Pulando atualização do cliente."
+        log_warn "Execute manualmente: container keycloak precisa estar saudável."
+        return 0
+    fi
+
+    # Obtém o UUID interno do cliente oauth2-proxy
+    client_uuid=$(docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh get clients -r agentk \
+        --fields id,clientId 2>/dev/null \
+        | python3 -c "
+import sys, json
+try:
+    clients = json.load(sys.stdin)
+    print(next(c['id'] for c in clients if c.get('clientId') == 'oauth2-proxy'))
+except Exception:
+    pass
+" 2>/dev/null || true)
+
+    if [[ -z "$client_uuid" ]]; then
+        log_warn "Cliente oauth2-proxy não encontrado no Keycloak. Realm ainda não importado?"
+        return 0
+    fi
+
+    # Atualiza o atributo para aceitar qualquer post_logout_redirect_uri
+    if docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh update "clients/${client_uuid}" \
+        -r agentk \
+        -s 'attributes."post.logout.redirect.uris"=*' 2>/dev/null; then
+        log_ok "validPostLogoutRedirectUris atualizado para '*' (aceita qualquer domínio)."
+    else
+        log_warn "Falha ao atualizar validPostLogoutRedirectUris. Verifique manualmente no admin do Keycloak."
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -484,6 +540,7 @@ main() {
     ensure_gateway_keystore
     ensure_logs_dir
     start_stack
+    fix_keycloak_post_logout_uris
     print_summary
 }
 
