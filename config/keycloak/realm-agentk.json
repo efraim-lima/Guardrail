@@ -8,10 +8,11 @@
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+
   "authenticationFlows": [
     {
       "alias": "first broker login - auto link",
-      "description": "Auto-linka conta existente por email sem pedir senha",
+      "description": "Cria usuário novo ou vincula por email sem pedir senha",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
@@ -31,6 +32,7 @@
       ]
     }
   ],
+
   "identityProviders": [
     {
       "alias": "google",
@@ -45,15 +47,15 @@
         "clientId": "__GOOGLE_CLIENT_ID__",
         "clientSecret": "__GOOGLE_CLIENT_SECRET__",
         "defaultScope": "openid email profile",
-        "hostedDomain": "",
         "useJwksUrl": "true",
         "syncMode": "IMPORT"
       }
     }
   ],
+
   "identityProviderMappers": [
     {
-      "name": "google-email-mapper",
+      "name": "google-email",
       "identityProviderAlias": "google",
       "identityProviderMapper": "oidc-user-attribute-idp-mapper",
       "config": {
@@ -63,16 +65,27 @@
       }
     },
     {
-      "name": "google-username-mapper",
+      "name": "google-first-name",
       "identityProviderAlias": "google",
       "identityProviderMapper": "oidc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "claim": "name",
-        "user.attribute": "fullName"
+        "claim": "given_name",
+        "user.attribute": "firstName"
+      }
+    },
+    {
+      "name": "google-last-name",
+      "identityProviderAlias": "google",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "claim": "family_name",
+        "user.attribute": "lastName"
       }
     }
   ],
+
   "roles": {
     "realm": [
       {
@@ -81,14 +94,16 @@
       }
     ]
   },
+
   "requiredActions": [
-    {"alias": "CONFIGURE_TOTP",         "providerId": "CONFIGURE_TOTP",         "enabled": true,  "defaultAction": false, "priority": 10, "config": {}},
-    {"alias": "UPDATE_PASSWORD",         "providerId": "UPDATE_PASSWORD",         "enabled": true,  "defaultAction": false, "priority": 30, "config": {}},
-    {"alias": "UPDATE_PROFILE",          "providerId": "UPDATE_PROFILE",          "enabled": true,  "defaultAction": false, "priority": 40, "config": {}},
-    {"alias": "VERIFY_EMAIL",            "providerId": "VERIFY_EMAIL",            "enabled": true,  "defaultAction": false, "priority": 50, "config": {}},
-    {"alias": "delete_account",          "providerId": "delete_account",          "enabled": false, "defaultAction": false, "priority": 60, "config": {}},
-    {"alias": "TERMS_AND_CONDITIONS",    "providerId": "TERMS_AND_CONDITIONS",    "enabled": false, "defaultAction": false, "priority": 20, "config": {}}
+    {"alias": "CONFIGURE_TOTP",      "providerId": "CONFIGURE_TOTP",      "enabled": true,  "defaultAction": false, "priority": 10, "config": {}},
+    {"alias": "UPDATE_PASSWORD",     "providerId": "UPDATE_PASSWORD",     "enabled": true,  "defaultAction": false, "priority": 30, "config": {}},
+    {"alias": "UPDATE_PROFILE",      "providerId": "UPDATE_PROFILE",      "enabled": true,  "defaultAction": false, "priority": 40, "config": {}},
+    {"alias": "VERIFY_EMAIL",        "providerId": "VERIFY_EMAIL",        "enabled": true,  "defaultAction": false, "priority": 50, "config": {}},
+    {"alias": "delete_account",      "providerId": "delete_account",      "enabled": false, "defaultAction": false, "priority": 60, "config": {}},
+    {"alias": "TERMS_AND_CONDITIONS","providerId": "TERMS_AND_CONDITIONS","enabled": false, "defaultAction": false, "priority": 20, "config": {}}
   ],
+
   "users": [
     {
       "username": "k8s-admin",
@@ -106,68 +121,9 @@
         }
       ],
       "realmRoles": ["k8s-admin"]
-    },
-    {
-      "username": "efraim.alima@gmail.com",
-      "email": "efraim.alima@gmail.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Efraim",
-      "lastName": "Alima",
-      "federatedIdentities": [
-        {
-          "identityProvider": "google",
-          "userId": "efraim.alima@gmail.com",
-          "userName": "efraim.alima@gmail.com"
-        }
-      ]
-    },
-    {
-      "username": "henriquerg99@gmail.com",
-      "email": "henriquerg99@gmail.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Henrique",
-      "lastName": "RG",
-      "federatedIdentities": [
-        {
-          "identityProvider": "google",
-          "userId": "henriquerg99@gmail.com",
-          "userName": "henriquerg99@gmail.com"
-        }
-      ]
-    },
-    {
-      "username": "arthur10batista@gmail.com",
-      "email": "arthur10batista@gmail.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Arthur",
-      "lastName": "Batista",
-      "federatedIdentities": [
-        {
-          "identityProvider": "google",
-          "userId": "arthur10batista@gmail.com",
-          "userName": "arthur10batista@gmail.com"
-        }
-      ]
-    },
-    {
-      "username": "felipeayom2.f@gmail.com",
-      "email": "felipeayom2.f@gmail.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Felipe",
-      "lastName": "Ayom",
-      "federatedIdentities": [
-        {
-          "identityProvider": "google",
-          "userId": "felipeayom2.f@gmail.com",
-          "userName": "felipeayom2.f@gmail.com"
-        }
-      ]
     }
   ],
+
   "clients": [
     {
       "clientId": "oauth2-proxy",
@@ -175,12 +131,8 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "secret": "oauth2-proxy-secret",
-      "redirectUris": [
-        "*"
-      ],
-      "webOrigins": [
-        "*"
-      ],
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
