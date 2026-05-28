@@ -40,11 +40,13 @@
       }
     },
     {
-      "name": "google-name-mapper",
+      "name": "google-username-mapper",
       "identityProviderAlias": "google",
-      "identityProviderMapper": "oidc-full-name-idp-mapper",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
       "config": {
-        "syncMode": "INHERIT"
+        "syncMode": "INHERIT",
+        "claim": "name",
+        "user.attribute": "fullName"
       }
     }
   ],
