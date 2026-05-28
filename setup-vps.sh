@@ -251,6 +251,14 @@ fix_keycloak_post_logout_uris() {
         return 0
     fi
 
+    # Autentica kcadm para as operações posteriores (agentk-internal, k8s-admin)
+    docker exec keycloak \
+        /opt/keycloak/bin/kcadm.sh config credentials \
+        --server "http://localhost:8080/keycloak" \
+        --realm master \
+        --user "$admin_user" \
+        --password "$admin_pass" 2>/dev/null || true
+
     # UUID do cliente oauth2-proxy
     client_uuid=$(docker exec keycloak sh -c "
         curl -s http://localhost:8080/keycloak/admin/realms/agentk/clients \

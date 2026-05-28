@@ -1,5 +1,32 @@
 # Registro de Alterações (Changelog)
 
+## [2026-06-02] - Correção crítica: redirect_uri inválido no Keycloak para implantação VPS
+
+### Arquivos Modificados:
+- `setup-vps.sh` [EDITADO]: Substituída a lógica da função `fix_keycloak_post_logout_uris()`. A abordagem anterior (exclusivamente via `kcadm.sh`) apenas atualizava `post.logout.redirect.uris` e não modificava `redirectUris` nem `webOrigins` do cliente `oauth2-proxy`. A nova implementação:
+  1. Obtém token admin via REST API (`/realms/master/protocol/openid-connect/token`) — mais confiável para operações que envolvem arrays JSON.
+  2. Autêntica `kcadm.sh config credentials` logo após, para que as operações subsequentes (`agentk-internal`, `k8s-admin`) continuem funcionando.
+  3. Recupera o UUID interno do cliente `oauth2-proxy` via REST.
+  4. Envia `PUT /admin/realms/agentk/clients/{uuid}` com `redirectUris`, `webOrigins` (incluindo `VPS_HOSTNAME`) e `attributes.post.logout.redirect.uris = "*"` em uma única chamada.
+- `config/keycloak/realm-agentk.json` [EDITADO]: Alterados `redirectUris` e `webOrigins` do cliente `oauth2-proxy` de `["https://agentk.local/oauth2/callback"]` / `["https://agentk.local"]` para `["*"]` / `["*"]`. Isso garante que futuras reimportações do realm (volume recriado) não bloqueiem deployments com hostname diferente de `agentk.local`.
+
+### Motivo / Descrição:
+O Keycloak persiste o realm importado em volume Docker. Quando o stack é iniciado em um VPS com `agentk-guardrail.duckdns.org`, o oauth2-proxy envia `redirect_uri=https://agentk-guardrail.duckdns.org/oauth2/callback`, mas o cliente Keycloak `oauth2-proxy` possuía apenas `redirectUris: ["https://agentk.local/oauth2/callback"]` no volume persistido. Isso resultava no erro `Invalid parameter: redirect_uri` impedindo qualquer login. O setup-vps.sh já gerava corretamente o `docker-compose.override.yaml` com o hostname público, mas não atualizava a entidade cliente no Keycloak via API após a importação.
+
+### Fix imediato (EC2 já em execução):
+```bash
+ADMIN_PASS=$(grep KEYCLOAK_ADMIN_PASSWORD .env | cut -d= -f2)
+VPS_HOSTNAME=$(grep VPS_HOSTNAME .env | cut -d= -f2)
+TOKEN=$(docker exec keycloak sh -c "curl -s -X POST http://localhost:8080/keycloak/realms/master/protocol/openid-connect/token -d 'client_id=admin-cli&grant_type=password&username=admin&password=${ADMIN_PASS}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('access_token',''))\"")
+CLIENT_UUID=$(docker exec keycloak sh -c "curl -s http://localhost:8080/keycloak/admin/realms/agentk/clients -H 'Authorization: Bearer ${TOKEN}' | python3 -c \"import sys,json; cs=json.load(sys.stdin); print(next(c['id'] for c in cs if c.get('clientId')=='oauth2-proxy'))\"")
+docker exec keycloak sh -c "curl -s -X PUT http://localhost:8080/keycloak/admin/realms/agentk/clients/${CLIENT_UUID} -H 'Authorization: Bearer ${TOKEN}' -H 'Content-Type: application/json' -d '{\"redirectUris\":[\"https://${VPS_HOSTNAME}/oauth2/callback\",\"https://agentk.local/oauth2/callback\"],\"webOrigins\":[\"https://${VPS_HOSTNAME}\",\"https://agentk.local\"],\"attributes\":{\"post.logout.redirect.uris\":\"*\"}}'"
+```
+
+### Data e Autor:
+- 2026-06-02 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-06-01] - Correção do botão de logout: URL dinâmica e movimentação para sidebar
 
 ### Arquivos Modificados:

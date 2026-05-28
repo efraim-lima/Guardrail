@@ -151,10 +151,10 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "oauth2-proxy-secret",
       "redirectUris": [
-        "https://agentk.local/oauth2/callback"
+        "*"
       ],
       "webOrigins": [
-        "https://agentk.local"
+        "*"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
