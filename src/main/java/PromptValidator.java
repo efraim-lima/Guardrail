@@ -85,6 +85,7 @@ public class PromptValidator implements Runnable {
             this.server.createContext(path, new ValidateHandler());
             this.server.createContext("/resultado", new ResultHandler());
             this.server.createContext("/health", new HealthHandler());
+            this.server.createContext("/keycloak-event", new KeycloakEventHandler());
             this.server.setExecutor(executorService);
             this.server.start();
             
@@ -189,6 +190,87 @@ public class PromptValidator implements Runnable {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             writeJson(exchange, 200, "{\"status\":\"UP\"}");
+        }
+    }
+
+    /**
+     * Recebe eventos de login/logout do Keycloak via HTTP Event Listener.
+     * O Keycloak envia um POST com JSON contendo tipo, userId, clientId, IP e resultado.
+     */
+    private class KeycloakEventHandler implements HttpHandler {
+        private static final String SHARED_SECRET_ENV = "KC_GATEWAY_SHARED_SECRET";
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    writeJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                    return;
+                }
+
+                // Valida segredo compartilhado (cabeçalho X-Keycloak-Signature ou Authorization Bearer)
+                String expectedSecret = envOr(SHARED_SECRET_ENV, "changeme-keycloak-secret");
+                String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+                String sigHeader  = exchange.getRequestHeaders().getFirst("X-Keycloak-Signature");
+                boolean authorized = (authHeader != null && authHeader.equals("Bearer " + expectedSecret))
+                                  || (sigHeader  != null && sigHeader.equals(expectedSecret));
+                if (!authorized) {
+                    logError("Evento Keycloak rejeitado: segredo inválido, origem=" + exchange.getRemoteAddress().getAddress().getHostAddress());
+                    writeJson(exchange, 401, "{\"error\":\"unauthorized\"}");
+                    return;
+                }
+
+                String body = new String(readAll(exchange.getRequestBody()), StandardCharsets.UTF_8);
+                String sourceIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+
+                // Extrai campos relevantes do JSON de evento do Keycloak
+                String eventType = safeExtract(body, "type");
+                String userId    = safeExtract(body, "userId");
+                String clientId  = safeExtract(body, "clientId");
+                String realmId   = safeExtract(body, "realmId");
+                String ipAddress = safeExtract(body, "ipAddress");
+                String error     = safeExtract(body, "error");
+
+                String origin = (ipAddress != null && !ipAddress.isBlank()) ? ipAddress : sourceIp;
+                String outcome = (error != null && !error.isBlank()) ? "FAILURE:" + error : "SUCCESS";
+                String ctx = "realm=" + realmId + " client=" + clientId
+                           + (error != null && !error.isBlank() ? " error=" + error : "");
+
+                AuditLogger.log(
+                    (userId != null && !userId.isBlank()) ? userId : "anonymous",
+                    (eventType != null && !eventType.isBlank()) ? "KEYCLOAK_" + eventType : "KEYCLOAK_EVENT",
+                    "authentication",
+                    outcome,
+                    origin,
+                    ctx
+                );
+
+                writeJson(exchange, 200, "{\"status\":\"logged\"}");
+            } catch (Exception e) {
+                logError("Erro ao processar evento Keycloak: " + e.getMessage());
+                writeJson(exchange, 500, "{\"error\":\"internal_error\"}");
+            }
+        }
+
+        /** Extrai valor de um campo JSON simples (string) sem dependência externa. */
+        private String safeExtract(String json, String field) {
+            if (json == null || field == null) return null;
+            String token = "\"" + field + "\"";
+            int idx = json.indexOf(token);
+            if (idx < 0) return null;
+            int colon = json.indexOf(':', idx + token.length());
+            if (colon < 0) return null;
+            int start = colon + 1;
+            while (start < json.length() && (json.charAt(start) == ' ' || json.charAt(start) == '\t')) start++;
+            if (start >= json.length()) return null;
+            if (json.charAt(start) == '\"') {
+                int end = json.indexOf('\"', start + 1);
+                return end > start ? json.substring(start + 1, end) : null;
+            }
+            int end = start;
+            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
+            String val = json.substring(start, end).trim();
+            return val.isEmpty() || val.equals("null") ? null : val;
         }
     }
 

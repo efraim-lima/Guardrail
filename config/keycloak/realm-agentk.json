@@ -9,6 +9,36 @@
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
 
+  "eventsEnabled": true,
+  "eventsExpiration": 604800,
+  "eventsListeners": ["jboss-logging", "http-sender"],
+  "enabledEventTypes": [
+    "LOGIN", "LOGIN_ERROR",
+    "LOGOUT", "LOGOUT_ERROR",
+    "REGISTER", "REGISTER_ERROR",
+    "CODE_TO_TOKEN", "CODE_TO_TOKEN_ERROR",
+    "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR",
+    "TOKEN_EXCHANGE", "TOKEN_EXCHANGE_ERROR",
+    "IDENTITY_PROVIDER_LOGIN", "IDENTITY_PROVIDER_LOGIN_ERROR",
+    "IDENTITY_PROVIDER_FIRST_LOGIN", "IDENTITY_PROVIDER_FIRST_LOGIN_ERROR"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+
+  "components": {
+    "org.keycloak.events.EventListenerProvider": [
+      {
+        "id": "http-sender",
+        "name": "http-sender",
+        "providerId": "http-sender",
+        "config": {
+          "serverUri": ["http://agentk-gateway:8080/keycloak-event"],
+          "sharedSecret": ["${KC_GATEWAY_SHARED_SECRET:changeme-keycloak-secret}"]
+        }
+      }
+    ]
+  },
+
   "authenticationFlows": [
     {
       "alias": "first broker login - auto link",

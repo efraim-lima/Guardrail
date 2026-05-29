@@ -39,6 +39,7 @@ services:
       - OLLAMA_WORKERS=8
       - OLLAMA_MAX_QUEUE=500
       - EMBEDDINGS_CACHE_PATH=/app/output/BASE.embeddings.json
+      - KC_GATEWAY_SHARED_SECRET=${KC_GATEWAY_SHARED_SECRET:-changeme-keycloak-secret}
     # Removido entrypoint fixo para usar o docker-entrypoint.sh interno
     volumes:
       - ./config:/app/config:ro
@@ -176,6 +177,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-CHANGE_ME}
       # Senha do usuário k8s-admin usado para autorizar prompts RISKY.
       - K8S_ADMIN_PASSWORD=${K8S_ADMIN_PASSWORD:-changeme}
+      - KC_GATEWAY_SHARED_SECRET=${KC_GATEWAY_SHARED_SECRET:-changeme-keycloak-secret}
     ports:
       # Porta de acesso direto ao Keycloak (sem nginx, sem autenticacao).
       # Util para setup inicial e debug. Acesso via nginx: /keycloak/admin/

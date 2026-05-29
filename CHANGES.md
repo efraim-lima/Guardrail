@@ -1,5 +1,21 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Captura e registro de eventos de login do Keycloak
+
+### Arquivos Modificados:
+- `config/keycloak/realm-agentk.json` [EDITADO]: Adicionadas as configurações `eventsEnabled: true`, `adminEventsEnabled: true`, `adminEventsDetailsEnabled: true` e a lista `enabledEventTypes` com os principais eventos de autenticação (`LOGIN`, `LOGIN_ERROR`, `LOGOUT`, `REGISTER`, `CODE_TO_TOKEN`, `CLIENT_LOGIN`, `IDENTITY_PROVIDER_LOGIN` e suas variantes de erro). Adicionado o componente `http-sender` em `components["org.keycloak.events.EventListenerProvider"]`, configurado para enviar eventos ao endpoint interno `http://agentk-gateway:8080/keycloak-event` usando o segredo compartilhado `KC_GATEWAY_SHARED_SECRET`.
+- `src/main/java/PromptValidator.java` [EDITADO]: Registrado o contexto `/keycloak-event` no servidor HTTP interno (ao lado de `/validar`, `/resultado` e `/health`). Implementada a classe interna `KeycloakEventHandler` responsável por: (1) validar o segredo compartilhado via cabeçalho `Authorization: Bearer <secret>` ou `X-Keycloak-Signature`; (2) extrair os campos `type`, `userId`, `clientId`, `realmId`, `ipAddress` e `error` do corpo JSON do evento; (3) registrar o evento via `AuditLogger.log()` com os campos padronizados de auditoria, mapeando o resultado como `SUCCESS` ou `FAILURE:<error>`.
+- `docker-compose.yaml` [EDITADO]: Adicionada variável de ambiente `KC_GATEWAY_SHARED_SECRET=${KC_GATEWAY_SHARED_SECRET:-changeme-keycloak-secret}` nos serviços `agentk-gateway` e `keycloak`, tornando o segredo compartilhado configurável via `.env`.
+- `env.example` [EDITADO]: Adicionada entrada `KC_GATEWAY_SHARED_SECRET=changeme-keycloak-secret` com instrução para geração segura via `openssl rand -hex 32`.
+
+### Motivo / Descrição:
+Os eventos de login provenientes do Keycloak não estavam sendo capturados pelo Gateway. O Keycloak não possuía o Event Listener HTTP habilitado no realm, e o serviço `agentk-gateway` não expunha nenhum endpoint para receber esses eventos. Com esta alteração, o Keycloak passa a enviar cada evento de autenticação (login, logout, erros) ao Gateway via HTTP POST. O Gateway valida a autenticidade da chamada pelo segredo compartilhado e registra o evento no log de auditoria padronizado (`AuditLogger`), garantindo rastreabilidade de acessos.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-06-02] - Correção crítica: redirect_uri inválido no Keycloak para implantação VPS
 
 ### Arquivos Modificados:
