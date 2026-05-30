@@ -53,7 +53,7 @@ apply_realm_event_settings() {
     -s adminEventsEnabled=true \
     -s adminEventsDetailsEnabled=true \
     -s eventsExpiration=604800 \
-    -s 'eventsListeners=["jboss-logging","http-sender"]' \
+    -s 'eventsListeners=["jboss-logging"]' \
     -s 'enabledEventTypes=["LOGIN","LOGIN_ERROR","LOGOUT","LOGOUT_ERROR","REGISTER","REGISTER_ERROR","CODE_TO_TOKEN","CODE_TO_TOKEN_ERROR","CLIENT_LOGIN","CLIENT_LOGIN_ERROR","TOKEN_EXCHANGE","TOKEN_EXCHANGE_ERROR","IDENTITY_PROVIDER_LOGIN","IDENTITY_PROVIDER_LOGIN_ERROR","IDENTITY_PROVIDER_FIRST_LOGIN","IDENTITY_PROVIDER_FIRST_LOGIN_ERROR"]'
 }
 

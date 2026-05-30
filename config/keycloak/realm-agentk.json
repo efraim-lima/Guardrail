@@ -11,7 +11,7 @@
 
   "eventsEnabled": true,
   "eventsExpiration": 604800,
-  "eventsListeners": ["jboss-logging", "http-sender"],
+  "eventsListeners": ["jboss-logging"],
   "enabledEventTypes": [
     "LOGIN", "LOGIN_ERROR",
     "LOGOUT", "LOGOUT_ERROR",
@@ -27,15 +27,6 @@
 
   "components": {
     "org.keycloak.events.EventListenerProvider": [
-      {
-        "id": "http-sender",
-        "name": "http-sender",
-        "providerId": "http-sender",
-        "config": {
-          "serverUri": ["http://agentk-gateway:8080/keycloak-event"],
-          "sharedSecret": ["${KC_GATEWAY_SHARED_SECRET:changeme-keycloak-secret}"]
-        }
-      }
     ]
   },
 

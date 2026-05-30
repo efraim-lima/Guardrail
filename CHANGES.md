@@ -1,5 +1,19 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Remoção do listener inexistente http-sender do Keycloak
+
+### Arquivos Modificados:
+- `config/keycloak/realm-agentk.json` [EDITADO]: Removida a referência ao listener `http-sender` de `eventsListeners` e apagado o bloco `components["org.keycloak.events.EventListenerProvider"]`, pois a imagem oficial do Keycloak em uso não inclui esse provider. Permanecem apenas os eventos nativos com `jboss-logging`.
+- `scripts/keycloak-init.sh` [EDITADO]: Ajustado o bootstrap para reaplicar somente os listeners nativos suportados pelo Keycloak, evitando o erro `Event listener 'http-sender' registered, but provider not found` durante a inicialização.
+
+### Motivo / Descrição:
+O Keycloak estava emitindo erro em runtime porque o realm apontava para um listener inexistente na imagem atual. Como o provider `http-sender` não fazia parte do conjunto instalado, a configuração do realm foi simplificada para manter apenas o listener nativo `jboss-logging`, garantindo que os eventos de autenticação apareçam corretamente nos logs do Keycloak sem depender de extensões extras.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-29] - Reaplicação automática dos eventos do Keycloak no bootstrap
 
 ### Arquivos Modificados:
