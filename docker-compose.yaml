@@ -163,6 +163,9 @@ services:
       - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
       - KC_DB=dev-file
+      - KC_LOG_LEVEL=INFO,org.keycloak.events:DEBUG
+      - KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL=info
+      - KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_ERROR_LEVEL=warn
       # KC_HOSTNAME define o hostname público do Keycloak, usado para construir URLs de
       # callback enviadas a provedores externos (Google OAuth2). Sem isso, o Keycloak
       # usa o hostname interno do container, causando redirect_uri mismatch.

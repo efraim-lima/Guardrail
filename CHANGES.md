@@ -1,5 +1,18 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Aumento de verbosidade dos eventos de autenticação no Keycloak
+
+### Arquivos Modificados:
+- `docker-compose.yaml` [EDITADO]: Adicionadas variáveis de ambiente do Keycloak para elevar a visibilidade dos eventos no log do container: `KC_LOG_LEVEL=INFO,org.keycloak.events:DEBUG`, `KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL=info` e `KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_ERROR_LEVEL=warn`.
+
+### Motivo / Descrição:
+Mesmo com eventos habilitados no realm, os logs de login/logout não estavam aparecendo de forma observável na saída padrão. O ajuste força o listener nativo `jboss-logging` a registrar eventos de sucesso e erro com níveis apropriados, permitindo auditoria de login Google diretamente via `docker logs keycloak`.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-29] - Remoção do listener inexistente http-sender do Keycloak
 
 ### Arquivos Modificados:
