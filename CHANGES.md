@@ -1,5 +1,31 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Desacoplamento do cliente Streamlit da saúde do gateway
+
+### Arquivos Modificados:
+- `docker-compose.yaml` [EDITADO]: Ajustada a dependência do `agentk-client` para deixar de exigir `agentk-gateway:service_healthy` no startup. O cliente agora inicia com `service_started`, permitindo que a interface e o fluxo de autenticação permaneçam acessíveis mesmo quando o gateway estiver temporariamente em restart loop.
+
+### Motivo / Descrição:
+O `agentk-gateway` em falha de boot estava bloqueando a disponibilidade do front-end por uma dependência rígida de saúde. Como a interface e o oauth2-proxy não precisam do gateway para autenticação básica, a dependência foi relaxada para evitar indisponibilidade total da página enquanto o subsistema de validação está sendo recuperado.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
+## [2026-05-29] - Desacoplamento do oauth2-proxy da saúde do gateway
+
+### Arquivos Modificados:
+- `docker-compose.yaml` [EDITADO]: Ajustada a política de inicialização do fluxo de autenticação para evitar que a indisponibilidade do `agentk-gateway` impeça a subida da camada de login. O `oauth2-proxy` permanece dependente apenas do `keycloak` e do `agentk-client`, permitindo acesso à interface mesmo quando a validação de prompts estiver temporariamente degradada.
+
+### Motivo / Descrição:
+Foi identificado que o `agentk-gateway` em restart loop estava bloqueando o restante da pilha por dependência excessivamente rígida no `oauth2-proxy`. Como o proxy de autenticação não precisa do gateway para servir login/logout, a restrição foi relaxada para manter a interface navegável e isolar a falha ao subsistema de validação.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-29] - Hardening do startup do Gateway em ambientes sem tabela NAT
 
 ### Arquivos Modificados:

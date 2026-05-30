@@ -141,8 +141,10 @@ services:
     depends_on:
       agentk-server:
         condition: service_healthy
+      # O cliente pode subir sem o gateway; as chamadas de validação ficam degradadas,
+      # mas a autenticação e a navegação na interface permanecem disponíveis.
       agentk-gateway:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
