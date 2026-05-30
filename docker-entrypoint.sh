@@ -117,23 +117,36 @@ setup_iptables() {
         return 0
     fi
 
+    # Alguns kernels/ambientes (ex.: VPS com módulos restritos) não expõem a tabela NAT.
+    # Nesse caso, o gateway deve seguir em modo webhook sem derrubar o container.
+    if ! iptables -t nat -L -n &>/dev/null; then
+        warn "Tabela NAT do iptables indisponível. Prosseguindo sem redirecionamento MITM."
+        return 0
+    fi
+
     # Verifica se as regras já existem antes de adicionar (idempotente)
     if iptables -t nat -C PREROUTING -p tcp --dport "$TARGET_PORT" \
             -j REDIRECT --to-port "$GATEWAY_MITM_PORT" 2>/dev/null; then
         log "Regra PREROUTING já existe ($TARGET_PORT → $GATEWAY_MITM_PORT)."
     else
-        iptables -t nat -A PREROUTING -p tcp --dport "$TARGET_PORT" \
-            -j REDIRECT --to-port "$GATEWAY_MITM_PORT"
-        log "Regra PREROUTING criada: :$TARGET_PORT → :$GATEWAY_MITM_PORT"
+        if iptables -t nat -A PREROUTING -p tcp --dport "$TARGET_PORT" \
+                -j REDIRECT --to-port "$GATEWAY_MITM_PORT" 2>/dev/null; then
+            log "Regra PREROUTING criada: :$TARGET_PORT → :$GATEWAY_MITM_PORT"
+        else
+            warn "Falha ao criar PREROUTING NAT. Prosseguindo sem redirecionamento MITM."
+        fi
     fi
 
     if iptables -t nat -C OUTPUT -p tcp --dport "$TARGET_PORT" \
             -j REDIRECT --to-port "$GATEWAY_MITM_PORT" 2>/dev/null; then
         log "Regra OUTPUT já existe."
     else
-        iptables -t nat -A OUTPUT -p tcp --dport "$TARGET_PORT" \
-            -j REDIRECT --to-port "$GATEWAY_MITM_PORT" 2>/dev/null || true
-        log "Regra OUTPUT criada."
+        if iptables -t nat -A OUTPUT -p tcp --dport "$TARGET_PORT" \
+                -j REDIRECT --to-port "$GATEWAY_MITM_PORT" 2>/dev/null; then
+            log "Regra OUTPUT criada."
+        else
+            warn "Falha ao criar OUTPUT NAT. Prosseguindo sem redirecionamento MITM."
+        fi
     fi
 }
 

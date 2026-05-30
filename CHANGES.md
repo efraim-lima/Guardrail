@@ -1,5 +1,19 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Hardening do startup do Gateway em ambientes sem tabela NAT
+
+### Arquivos Modificados:
+- `docker-entrypoint.sh` [EDITADO]: A função `setup_iptables()` passou a validar explicitamente a disponibilidade da tabela `nat` via `iptables -t nat -L -n`. Em ambientes onde a tabela não existe (por limitação do kernel/módulos), o script agora registra aviso e continua o boot sem redirecionamento MITM, em vez de encerrar o processo com erro.
+- `docker-entrypoint.sh` [EDITADO]: As inserções de regras `PREROUTING` e `OUTPUT` foram encapsuladas com tratamento de falha não fatal. Quando a criação da regra não for possível, o comportamento passa a ser degradado (warn + continuidade) preservando o modo webhook.
+
+### Motivo / Descrição:
+Foi identificado loop de reinicialização no container `agentk-gateway` com erro `iptables ... can't initialize iptables table 'nat'`. Como o entrypoint executa com `set -e`, qualquer falha no `iptables -t nat -A` interrompia o startup da aplicação. A alteração implementa fail-soft para infraestrutura sem NAT table, mantendo a disponibilidade do gateway para validação webhook e captura de eventos do Keycloak.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-29] - Captura e registro de eventos de login do Keycloak
 
 ### Arquivos Modificados:
