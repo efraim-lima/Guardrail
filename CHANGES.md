@@ -1,5 +1,18 @@
 # Registro de Alterações (Changelog)
 
+## [2026-05-29] - Reaplicação automática dos eventos do Keycloak no bootstrap
+
+### Arquivos Modificados:
+- `scripts/keycloak-init.sh` [EDITADO]: O script de inicialização do Keycloak passou a aguardar a disponibilidade do `kcadm.sh` e, em seguida, reexecutar a atualização do realm `agentk` para garantir `eventsEnabled`, `adminEventsEnabled`, `adminEventsDetailsEnabled`, `eventsListeners` e `enabledEventTypes` mesmo quando o realm já existir no volume persistido e o import inicial for ignorado.
+
+### Motivo / Descrição:
+O Keycloak estava registrando `Realm 'agentk' already exists. Import skipped`, o que impedia a aplicação automática das configurações de auditoria de login em ambientes já provisionados. A automação foi adicionada para tornar o bootstrap idempotente e assegurar que os eventos de autenticação permaneçam habilitados sem intervenção manual via Admin CLI.
+
+### Data e Autor:
+- 2026-05-29 — Modificação aplicada por automação assistida (solicitado pelo mantenedor do repositório).
+
+---
+
 ## [2026-05-29] - Desacoplamento do cliente Streamlit da saúde do gateway
 
 ### Arquivos Modificados:
